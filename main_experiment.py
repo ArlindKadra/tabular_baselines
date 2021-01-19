@@ -186,6 +186,7 @@ print('Total budget corresponds to %.1f full function evaluations.'%(sum([r.budg
 print('Total budget corresponds to %.1f full function evaluations.'%(sum([r.budget for r in all_runs])/args.max_budget))
 print('The run took  %.1f seconds to complete.'%(all_runs[-1].time_stamps['finished'] - all_runs[0].time_stamps['started']))
 
+loader = Loader(task_id=args.task_id, val_fraction=0)
 worker = XGBoostWorker(
         args.run_id,
         param=param,

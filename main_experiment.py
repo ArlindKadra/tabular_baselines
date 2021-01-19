@@ -8,6 +8,7 @@ import random
 import time
 
 import hpbandster.core.nameserver as hpns
+import hpbandster.core.result as hpres
 from hpbandster.optimizers import BOHB as BOHB
 import numpy as np
 import openml
@@ -38,7 +39,8 @@ parser.add_argument(
 parser.add_argument(
     '--nic_name',
     type=str,
-    help='Which network interface to use for communication.'
+    help='Which network interface to use for communication.',
+    default='ib0',
 )
 parser.add_argument(
     '--task_id',
@@ -113,16 +115,21 @@ if args.worker:
         param=param,
         splits=loader.get_splits(),
     )
-    worker.load_nameserver_credentials(
-        working_directory=args.working_directory,
-    )
+    while True:
+        try:
+            worker.load_nameserver_credentials(
+                working_directory=args.working_directory,
+            )
+            break
+        except RuntimeError:
+            pass
     worker.run(background=False)
     exit(0)
 
 run_directory = os.path.join(
     args.working_directory,
-    args.task_id,
-    args.seed,
+    f'{args.task_id}',
+    f'{args.seed}',
 )
 os.makedirs(run_directory, exist_ok=True)
 
@@ -143,15 +150,16 @@ worker = XGBoostWorker(
     nameserver_port=ns_port
 )
 worker.run(background=True)
-
+result_logger = hpres.json_result_logger(directory=run_directory, overwrite=False)
 bohb = BOHB(
     configspace = XGBoostWorker.get_configspace(),
 	run_id = args.run_id,
-    host=host,
+        host=host,
 	nameserver=ns_host,
 	nameserver_port=ns_port,
 	min_budget=args.min_budget,
-    max_budget=args.max_budget,
+        max_budget=args.max_budget,
+        result_logger=result_logger,
 )
 
 res = bohb.run(
@@ -186,6 +194,6 @@ worker = XGBoostWorker(
 )
 refit_result = worker.refit(best_config)
 
-with open(os.path.join(run_directory, 'results.json'), 'w') as file:
+with open(os.path.join(run_directory, 'refit_result.json'), 'w') as file:
     json.dump(refit_result, file)
 

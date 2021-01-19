@@ -39,7 +39,7 @@ class XGBoostWorker(Worker):
         y_train = self.splits['y_train']
         y_val = self.splits['y_val']
         y_test = self.splits['y_test']
-
+        
         d_train = xgb.DMatrix(X_train, label=y_train)
         d_val = xgb.DMatrix(X_val, label=y_val)
         d_test = xgb.DMatrix(X_test, label=y_test)
@@ -50,6 +50,19 @@ class XGBoostWorker(Worker):
         y_train_preds = gb_model.predict(d_train)
         y_val_preds = gb_model.predict(d_val)
         y_test_preds = gb_model.predict(d_test)
+
+        if xgboost_config['objective'] == 'binary:logistic':
+            y_train_preds = np.array(y_train_preds)
+            y_train_preds = y_train_preds > 0.5
+            y_train_preds = y_train_preds.astype(int)
+
+            y_val_preds = np.array(y_val_preds)
+            y_val_preds = y_val_preds > 0.5
+            y_val_preds = y_val_preds.astype(int)
+
+            y_test_preds = np.array(y_test_preds)
+            y_test_preds = y_test_preds > 0.5
+            y_test_preds = y_test_preds.astype(int)
 
         train_performance = balanced_accuracy_score(y_train, y_train_preds)
         val_performance = balanced_accuracy_score(y_val, y_val_preds)
@@ -88,10 +101,20 @@ class XGBoostWorker(Worker):
         gb_model = xgb.train(xgboost_config, d_train, num_rounds)
 
         # make prediction
-        train_preds = gb_model.predict(d_train)
-        test_preds = gb_model.predict(d_test)
-        train_performance = balanced_accuracy_score(y_train, train_preds)
-        test_performance = balanced_accuracy_score(y_test, test_preds)
+        y_train_preds = gb_model.predict(d_train)
+        y_test_preds = gb_model.predict(d_test)
+
+        if xgboost_config['objective'] == 'binary:logistic':
+            y_train_preds = np.array(y_train_preds)
+            y_train_preds = y_train_preds > 0.5
+            y_train_preds = y_train_preds.astype(int)
+
+            y_test_preds = np.array(y_test_preds)
+            y_test_preds = y_test_preds > 0.5
+            y_test_preds = y_test_preds.astype(int)
+
+        train_performance = balanced_accuracy_score(y_train, y_train_preds)
+        test_performance = balanced_accuracy_score(y_test, y_test_preds)
 
         if test_performance is None or test_performance is np.inf:
             test_performance = 0

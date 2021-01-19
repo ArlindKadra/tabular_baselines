@@ -46,7 +46,7 @@ parser.add_argument(
     '--task_id',
     type=int,
     help='Minimum budget used during the optimization.',
-    default=47,
+    default=233109,
 )
 parser.add_argument(
     '--seed',
@@ -92,8 +92,8 @@ random.seed(args.seed)
 host = hpns.nic_name_to_host(args.nic_name)
 
 loader = Loader(task_id=args.task_id)
-check_leak_status(loader.get_splits())
-check_split_stratification(loader.get_splits())
+#check_leak_status(loader.get_splits())
+#check_split_stratification(loader.get_splits())
 
 nr_classes = int(openml.datasets.get_dataset(loader.get_dataset_id()).qualities['NumberOfClasses'])
 

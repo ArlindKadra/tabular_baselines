@@ -38,13 +38,13 @@ parser.add_argument(
 parser.add_argument(
     '--nic_name',
     type=str,
-    help='Which network interface to use for communication.'
+    help='Which network interface to use for communication.',
 )
 parser.add_argument(
     '--task_id',
     type=int,
     help='Minimum budget used during the optimization.',
-    default=47,
+    default=233109,
 )
 parser.add_argument(
     '--seed',
@@ -90,8 +90,8 @@ random.seed(args.seed)
 host = hpns.nic_name_to_host(args.nic_name)
 
 loader = Loader(task_id=args.task_id)
-check_leak_status(loader.get_splits())
-check_split_stratification(loader.get_splits())
+#check_leak_status(loader.get_splits())
+#check_split_stratification(loader.get_splits())
 
 nr_classes = int(openml.datasets.get_dataset(loader.get_dataset_id()).qualities['NumberOfClasses'])
 
@@ -113,16 +113,22 @@ if args.worker:
         param=param,
         splits=loader.get_splits(),
     )
-    worker.load_nameserver_credentials(
-        working_directory=args.working_directory,
-    )
+    while True:
+        try:
+            worker.load_nameserver_credentials(
+                working_directory=args.working_directory,
+            )
+            break
+
+        except RuntimeError:
+            pass
     worker.run(background=False)
     exit(0)
 
 run_directory = os.path.join(
     args.working_directory,
-    args.task_id,
-    args.seed,
+    f'{args.task_id}',
+    f'{args.seed}',
 )
 os.makedirs(run_directory, exist_ok=True)
 

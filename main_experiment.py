@@ -10,6 +10,7 @@ import time
 import hpbandster.core.nameserver as hpns
 import hpbandster.core.result as hpres
 from hpbandster.optimizers import BOHB as BOHB
+from hpbandster.optimizers import RandomSearch as RS
 import numpy as np
 import openml
 
@@ -41,6 +42,12 @@ parser.add_argument(
     type=str,
     help='Which network interface to use for communication.',
     default='ib0',
+)
+parser.add_argument(
+    '--optimizer',
+    type=str,
+    help='Which optimizer to use for the experiment.',
+    default='bohb',
 )
 parser.add_argument(
     '--task_id',
@@ -155,15 +162,23 @@ worker = XGBoostWorker(
 )
 worker.run(background=True)
 result_logger = hpres.json_result_logger(directory=run_directory, overwrite=False)
-bohb = BOHB(
+
+optimizer_choices = {
+    'bohb': BOHB,
+    'random_search': RS,
+}
+
+optimizer = optimizer_choices[args.optimizer]
+
+bohb = optimizer(
     configspace = XGBoostWorker.get_configspace(),
 	run_id = args.run_id,
-        host=host,
+    host=host,
 	nameserver=ns_host,
 	nameserver_port=ns_port,
 	min_budget=args.min_budget,
-        max_budget=args.max_budget,
-        result_logger=result_logger,
+    max_budget=args.max_budget,
+    result_logger=result_logger,
 )
 
 res = bohb.run(

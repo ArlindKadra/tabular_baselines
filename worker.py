@@ -1,4 +1,6 @@
 from copy import deepcopy
+from functools import partial
+from typing import Tuple
 
 import ConfigSpace as CS
 from hpbandster.core.worker import Worker
@@ -7,13 +9,36 @@ from sklearn.metrics import balanced_accuracy_score
 import xgboost as xgb
 
 
+def balanced_error(
+    threshold_predictions,
+    predt: np.ndarray,
+    dtrain: xgb.DMatrix,
+) -> Tuple[str, float]:
+
+    if threshold_predictions:
+        predt = np.array(predt)
+        predt = predt > 0.5
+        predt = predt.astype(int)
+    else:
+        predt = np.argmax(predt, axis=1)
+    y_train = dtrain.get_label()
+    accuracy_score = balanced_accuracy_score(y_train, predt)
+
+    return 'Balanced_error', 1 - accuracy_score
+
+
 class XGBoostWorker(Worker):
 
     def __init__(self, *args, param=None, splits=None, **kwargs):
-        print(kwargs)
+
+        super().__init__(*args, **kwargs)
         self.param=param
         self.splits = splits
-        super().__init__(*args, **kwargs)
+
+        if xgboost_config['objective'] == 'binary:logistic':
+            self.threshold_predictions = True
+        else:
+            self.threshold_predictions = False
 
     def compute(self, config, budget, **kwargs):
         """
@@ -39,19 +64,29 @@ class XGBoostWorker(Worker):
         y_train = self.splits['y_train']
         y_val = self.splits['y_val']
         y_test = self.splits['y_test']
-        
+
+
         d_train = xgb.DMatrix(X_train, label=y_train)
         d_val = xgb.DMatrix(X_val, label=y_val)
         d_test = xgb.DMatrix(X_test, label=y_test)
 
-        gb_model = xgb.train(xgboost_config, d_train, num_rounds)
-
+        eval_results = {}
+        gb_model = xgb.train(
+            xgboost_config,
+            d_train,
+            num_rounds,
+            feval=partial(balanced_error, self.threshold_predictions),
+            evals=[(d_train, 'd_train'), (d_val, 'd_val')],
+            evals_result=eval_results,
+        )
+        #TODO Do something with eval_results in the future
+        # print(eval_results)
         # make prediction
         y_train_preds = gb_model.predict(d_train)
         y_val_preds = gb_model.predict(d_val)
         y_test_preds = gb_model.predict(d_test)
 
-        if xgboost_config['objective'] == 'binary:logistic':
+        if self.threshold_predictions:
             y_train_preds = np.array(y_train_preds)
             y_train_preds = y_train_preds > 0.5
             y_train_preds = y_train_preds.astype(int)
@@ -98,13 +133,22 @@ class XGBoostWorker(Worker):
         d_train = xgb.DMatrix(X_train, label=y_train)
         d_test = xgb.DMatrix(X_test, label=y_test)
 
-        gb_model = xgb.train(xgboost_config, d_train, num_rounds)
-
-        # make prediction
+        eval_results = {}
+        gb_model = xgb.train(
+            xgboost_config,
+            d_train,
+            num_rounds,
+            feval=partial(balanced_error, self.threshold_predictions),
+            evals=[(d_train, 'd_train'), (d_test, 'd_test')],
+            evals_result=eval_results,
+        )
+        #TODO do something with eval_results
+        #print(eval_results)
+        #make prediction
         y_train_preds = gb_model.predict(d_train)
         y_test_preds = gb_model.predict(d_test)
 
-        if xgboost_config['objective'] == 'binary:logistic':
+        if self.threshold_predictions:
             y_train_preds = np.array(y_train_preds)
             y_train_preds = y_train_preds > 0.5
             y_train_preds = y_train_preds.astype(int)
@@ -142,16 +186,16 @@ class XGBoostWorker(Worker):
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'lambda',
-                lower=1E-5,
-                upper=100,
+                lower=1E-10,
+                upper=1,
             )
         )
         # l1 regularization
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'alpha',
-                lower=1E-5,
-                upper=100,
+                lower=1E-10,
+                upper=1,
             )
         )
         config_space.add_hyperparameter(

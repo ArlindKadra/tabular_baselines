@@ -115,3 +115,164 @@ def check_split_stratification(splits):
     assert X_train.shape[0] == y_train.shape[0]
     assert X_val.shape[0] == y_val.shape[0]
     assert X_test.shape[0] == y_test.shape[0]
+    
+def get_task_list(
+    benchmark_task_file: str = 'path/to/tasks.txt',
+) -> List[int]:
+    with open(os.path.join(benchmark_task_file), 'r') as f:
+        benchmark_info_str = f.readline()
+        benchmark_task_ids = [int(task_id) for task_id in benchmark_info_str.split(' ')]
+
+    return benchmark_task_ids
+
+
+def status_exp_tasks(working_directory, seed=11, model_name='xgboost'):
+
+    not_finished=0
+    finished=0
+    benchmark_task_file = 'benchmark_datasets.txt'
+    benchmark_task_file_path = os.path.join(working_directory, benchmark_task_file)
+    result_directory = os.path.join(working_directory, model_name)
+    task_ids = get_task_list(benchmark_task_file_path)
+    for task_id in task_ids:
+        task_result_directory = os.path.join(result_directory, f'{task_id}', f'{seed}')
+        print(task_result_directory)
+        try:
+            with open(os.path.join(task_result_directory, 'refit_result.json'), 'r') as file:
+                task_result = json.load(file)
+                print(f'Task {task_id} finished.')
+                finished += 1
+                # TODO do something with the result
+        except FileNotFoundError:
+            print(f'Task {task_id} not finished.')
+            not_finished += 1
+    print(f'Finished tasks: {finished} , not finished tasks: {not_finished}')
+
+
+def read_xgboost_values(working_directory, seed=11, model_name='xgboost'):
+
+    xgboost_result_dir = {}
+    benchmark_task_file = 'benchmark_datasets.txt'
+    benchmark_task_file_path = os.path.join(working_directory, benchmark_task_file)
+    result_directory = os.path.join(working_directory, model_name)
+    task_ids = get_task_list(benchmark_task_file_path)
+    for task_id in task_ids:
+        task_result_directory = os.path.join(result_directory, f'{task_id}', f'{seed}')
+        try:
+            with open(os.path.join(task_result_directory, 'refit_result.json'), 'r') as file:
+                task_result = json.load(file)
+            xgboost_result_dir[task_id] = task_result['test_accuracy']
+        except FileNotFoundError:
+            print(f'Task {task_id} not finished.')
+            xgboost_result_dir[task_id] = None
+
+    return xgboost_result_dir
+
+
+def read_cocktail_values(cocktail_result_dir, benchmark_task_file_dir):
+
+    cocktail_result_dict = {}
+    result_path = os.path.join(
+        cocktail_result_dir,
+        'cocktail',
+        '512',
+    )
+    benchmark_task_file = 'benchmark_datasets.txt'
+    benchmark_task_file_path = os.path.join(
+        benchmark_task_file_dir,
+        benchmark_task_file
+    )
+    task_ids = get_task_list(benchmark_task_file_path)
+    for task_id in task_ids:
+
+            task_result_path = os.path.join(
+                result_path,
+                f'{task_id}',
+                'refit_run',
+                '11',
+            )
+
+            if os.path.exists(task_result_path):
+                if not os.path.isdir(task_result_path):
+                    task_result_path = os.path.join(
+                        result_path,
+                        f'{task_id}',
+                    )
+            else:
+                task_result_path = os.path.join(
+                    result_path,
+                    f'{task_id}',
+                )
+
+            try:
+                with open(os.path.join(task_result_path, 'run_results.txt')) as f:
+                    test_results = json.load(f)
+                cocktail_result_dict[task_id] = test_results['mean_test_bal_acc']
+            except FileNotFoundError:
+                cocktail_result_dict[task_id] = None
+
+    return cocktail_result_dict
+
+def compare_models(xgboost_dir, cocktail_dir):
+
+    xgboost_results = read_xgboost_values(xgboost_dir)
+    cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
+    table_dict = {
+        'Task Id': [],
+        'XGBoost': [],
+        'Cocktail': [],
+    }
+
+    cocktail_wins = 0
+    cocktail_losses = 0
+    cocktail_ties = 0
+    cocktail_performances = []
+    xgboost_performances = []
+    print(cocktail_results)
+    print(xgboost_results)
+
+    for task_id in xgboost_results:
+        xgboost_task_result = xgboost_results[task_id]
+        if xgboost_task_result is None:
+            continue
+        cocktail_task_result = cocktail_results[task_id]
+        cocktail_performances.append(cocktail_task_result)
+        xgboost_performances.append(xgboost_task_result)
+        if cocktail_task_result > xgboost_task_result:
+            cocktail_wins += 1
+        elif cocktail_task_result < xgboost_task_result:
+            cocktail_losses += 1
+        else:
+            cocktail_ties += 1
+        table_dict['Task Id'].append(task_id)
+        table_dict['XGBoost'].append(xgboost_task_result)
+        table_dict['Cocktail'].append(cocktail_task_result)
+
+        comparison_table = pd.DataFrame.from_dict(table_dict)
+        comparison_table.to_csv(os.path.join(xgboost_dir, 'table_comparison.csv'), index=False)
+
+
+    _, p_value = wilcoxon(cocktail_performances, xgboost_performances)
+    print(f'Cocktail wins: {cocktail_wins}, ties: {cocktail_ties}, looses: {cocktail_losses}')
+    print(f'P-value: {p_value}')
+
+xgboost_dir = os.path.expanduser(
+    os.path.join(
+        '~',
+        'Desktop',
+        'xgboost_results',
+    )
+)
+
+cocktail_dir = os.path.expanduser(
+    os.path.join(
+        '~',
+        'Desktop',
+        'PhD',
+        'Rezultate',
+        'RegularizationCocktail',
+        'NEMO',
+    )
+)
+# compare_models(xgboost_dir, cocktail_dir)
+

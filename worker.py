@@ -35,7 +35,7 @@ class XGBoostWorker(Worker):
         self.param=param
         self.splits = splits
 
-        if xgboost_config['objective'] == 'binary:logistic':
+        if self.param['objective'] == 'binary:logistic':
             self.threshold_predictions = True
         else:
             self.threshold_predictions = False

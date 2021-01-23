@@ -97,7 +97,7 @@ np.random.seed(args.seed)
 random.seed(args.seed)
 
 host = hpns.nic_name_to_host(args.nic_name)
-
+print(f'Experiment started with task id: {args.task_id}')
 loader = Loader(task_id=args.task_id)
 #check_leak_status(loader.get_splits())
 #check_split_stratification(loader.get_splits())

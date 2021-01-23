@@ -70,6 +70,7 @@ class XGBoostWorker(Worker):
         d_val = xgb.DMatrix(X_val, label=y_val)
         d_test = xgb.DMatrix(X_test, label=y_test)
 
+
         eval_results = {}
         gb_model = xgb.train(
             xgboost_config,
@@ -206,7 +207,7 @@ class XGBoostWorker(Worker):
             )
         )
         config_space.add_hyperparameter(
-            CS.UniformIntegerHyperparameter(
+            CS.UniformFloatHyperparameter(
                 'gamma',
                 lower=0,
                 upper=100,
@@ -219,5 +220,6 @@ class XGBoostWorker(Worker):
                 upper=10,
             )
         )
+
 
         return config_space

@@ -172,7 +172,7 @@ class XGBoostWorker(Worker):
         return res
 
     @staticmethod
-    def get_configspace():
+    def get_default_configspace():
 
         config_space = CS.ConfigurationSpace()
         # learning rate
@@ -221,5 +221,99 @@ class XGBoostWorker(Worker):
             )
         )
 
+
+        return config_space
+
+    @staticmethod
+    def get_amazon_configspace():
+
+        config_space = CS.ConfigurationSpace()
+        # learning rate
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'eta',
+                lower=0.1,
+                upper=0.5,
+            )
+        )
+        # l2 regularization
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'lambda',
+                lower=0,
+                upper=1000,
+            )
+        )
+        # l1 regularization
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'alpha',
+                lower=0,
+                upper=1000,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformIntegerHyperparameter(
+                'num_round',
+                lower=1,
+                upper=4000,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'gamma',
+                lower=0,
+                upper=5,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'colsample_bylevel',
+                lower=0.1,
+                upper=1,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'colsample_bynode',
+                lower=0.1,
+                upper=1,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'colsample_bytree',
+                lower=0.5,
+                upper=1,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformIntegerHyperparameter(
+                'max_depth',
+                lower=0,
+                upper=10,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformIntegerHyperparameter(
+                'max_delta_step',
+                lower=0,
+                upper=10,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'min_child_weight',
+                lower=0,
+                upper=120,
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.UniformFloatHyperparameter(
+                'subsample',
+                lower=0.5,
+                upper=1,
+            )
+        )
 
         return config_space

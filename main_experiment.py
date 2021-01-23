@@ -171,7 +171,7 @@ optimizer_choices = {
 optimizer = optimizer_choices[args.optimizer]
 
 bohb = optimizer(
-    configspace = XGBoostWorker.get_configspace(),
+    configspace = XGBoostWorker.get_amazon_configspace(),
 	run_id = args.run_id,
     host=host,
 	nameserver=ns_host,

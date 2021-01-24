@@ -232,38 +232,38 @@ class XGBoostWorker(Worker):
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'eta',
-                lower=0.1,
-                upper=0.5,
+                lower=0.01,
+                upper=1,
             )
         )
         # l2 regularization
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'lambda',
-                lower=0,
-                upper=1000,
+                lower=1E-10,
+                upper=1,
             )
         )
         # l1 regularization
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'alpha',
-                lower=0,
-                upper=1000,
+                lower=1E-10,
+                upper=1,
             )
         )
         config_space.add_hyperparameter(
             CS.UniformIntegerHyperparameter(
                 'num_round',
                 lower=1,
-                upper=4000,
+                upper=1000,
             )
         )
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'gamma',
                 lower=0,
-                upper=5,
+                upper=1,
             )
         )
         config_space.add_hyperparameter(

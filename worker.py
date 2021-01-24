@@ -232,8 +232,9 @@ class XGBoostWorker(Worker):
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'eta',
-                lower=0.01,
+                lower=0.001,
                 upper=1,
+                log=True,
             )
         )
         # l2 regularization
@@ -242,6 +243,7 @@ class XGBoostWorker(Worker):
                 'lambda',
                 lower=1E-10,
                 upper=1,
+                log=True,
             )
         )
         # l1 regularization
@@ -250,6 +252,7 @@ class XGBoostWorker(Worker):
                 'alpha',
                 lower=1E-10,
                 upper=1,
+                log=True,
             )
         )
         config_space.add_hyperparameter(
@@ -290,8 +293,8 @@ class XGBoostWorker(Worker):
         config_space.add_hyperparameter(
             CS.UniformIntegerHyperparameter(
                 'max_depth',
-                lower=0,
-                upper=10,
+                lower=1,
+                upper=20,
             )
         )
         config_space.add_hyperparameter(
@@ -305,13 +308,13 @@ class XGBoostWorker(Worker):
             CS.UniformFloatHyperparameter(
                 'min_child_weight',
                 lower=0,
-                upper=120,
+                upper=20,
             )
         )
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'subsample',
-                lower=0.5,
+                lower=0.01,
                 upper=1,
             )
         )

@@ -110,12 +110,14 @@ if nr_classes != 2:
         'num_class': nr_classes + 1,
         'disable_default_eval_metric': 1,
         'seed':args.seed,
+        'nthread': 2,
     }
 else:
     param = {
         'objective': 'binary:logistic',
         'disable_default_eval_metric': 1,
         'seed': args.seed,
+        'nthread': 2,
     }
 
 if args.worker:

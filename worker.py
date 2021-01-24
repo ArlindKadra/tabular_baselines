@@ -267,6 +267,7 @@ class XGBoostWorker(Worker):
                 'gamma',
                 lower=0,
                 upper=1,
+                log=True,
             )
         )
         config_space.add_hyperparameter(
@@ -309,6 +310,7 @@ class XGBoostWorker(Worker):
                 'min_child_weight',
                 lower=0,
                 upper=20,
+                log=True,
             )
         )
         config_space.add_hyperparameter(

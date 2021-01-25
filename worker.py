@@ -265,7 +265,7 @@ class XGBoostWorker(Worker):
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'gamma',
-                lower=0,
+                lower=0.1,
                 upper=1,
                 log=True,
             )
@@ -308,7 +308,7 @@ class XGBoostWorker(Worker):
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
                 'min_child_weight',
-                lower=0,
+                lower=0.1,
                 upper=20,
                 log=True,
             )

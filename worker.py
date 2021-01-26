@@ -174,62 +174,9 @@ class XGBoostWorker(Worker):
         return res
 
     @staticmethod
-    def get_default_configspace():
+    def get_default_configspace(seed=11):
 
-        config_space = CS.ConfigurationSpace()
-        # learning rate
-        config_space.add_hyperparameter(
-            CS.UniformFloatHyperparameter(
-                'eta',
-                lower=0.01,
-                upper=1,
-            )
-        )
-        # l2 regularization
-        config_space.add_hyperparameter(
-            CS.UniformFloatHyperparameter(
-                'lambda',
-                lower=1E-10,
-                upper=1,
-            )
-        )
-        # l1 regularization
-        config_space.add_hyperparameter(
-            CS.UniformFloatHyperparameter(
-                'alpha',
-                lower=1E-10,
-                upper=1,
-            )
-        )
-        config_space.add_hyperparameter(
-            CS.UniformIntegerHyperparameter(
-                'num_round',
-                lower=1,
-                upper=1000,
-            )
-        )
-        config_space.add_hyperparameter(
-            CS.UniformFloatHyperparameter(
-                'gamma',
-                lower=0,
-                upper=100,
-            )
-        )
-        config_space.add_hyperparameter(
-            CS.UniformIntegerHyperparameter(
-                'max_depth',
-                lower=1,
-                upper=10,
-            )
-        )
-
-
-        return config_space
-
-    @staticmethod
-    def get_amazon_configspace():
-
-        config_space = CS.ConfigurationSpace()
+        config_space = CS.ConfigurationSpace(seed=seed)
         # learning rate
         config_space.add_hyperparameter(
             CS.UniformFloatHyperparameter(
@@ -359,12 +306,18 @@ class TabNetWorker(Worker):
 
         categorical_columns = []
         categorical_dimensions = []
+
         for index, categorical_column in enumerate(self.categorical_ind):
             if categorical_column:
-                categorical_columns.append(index)
-                # column_unique_values = len(set(X_train[:,index]))
+                column_unique_values = len(set(X_train[:,index]))
                 column_max_index = int(max(X_train[:,index]))
+                # categorical columns with only one unique value
+                # do not need an embedding.
+                if column_unique_values == 1:
+                    continue
+                categorical_columns.append(index)
                 categorical_dimensions.append(column_max_index + 1)
+
 
         clf = TabNetClassifier(
             n_a=config['na'],
@@ -449,11 +402,16 @@ class TabNetWorker(Worker):
 
         categorical_columns = []
         categorical_dimensions = []
+
         for index, categorical_column in enumerate(self.categorical_ind):
             if categorical_column:
-                categorical_columns.append(index)
-                # column_unique_values = len(set(X_train[:,index]))
+                column_unique_values = len(set(X_train[:, index]))
                 column_max_index = int(max(X_train[:, index]))
+                # categorical columns with only one unique value
+                # do not need an embedding.
+                if column_unique_values == 1:
+                    continue
+                categorical_columns.append(index)
                 categorical_dimensions.append(column_max_index + 1)
 
         clf = TabNetClassifier(
@@ -520,9 +478,9 @@ class TabNetWorker(Worker):
         return res
 
     @staticmethod
-    def get_default_configspace():
+    def get_default_configspace(seed=11):
 
-        config_space = CS.ConfigurationSpace()
+        config_space = CS.ConfigurationSpace(seed=seed)
         # learning rate
         config_space.add_hyperparameter(
             CS.CategoricalHyperparameter(

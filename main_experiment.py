@@ -105,8 +105,10 @@ random.seed(args.seed)
 host = hpns.nic_name_to_host(args.nic_name)
 print(f'Experiment started with task id: {args.task_id}')
 loader = Loader(task_id=args.task_id)
-#check_leak_status(loader.get_splits())
-#check_split_stratification(loader.get_splits())
+
+#
+# check_leak_status(loader.get_splits())
+# check_split_stratification(loader.get_splits())
 
 nr_classes = int(openml.datasets.get_dataset(loader.get_dataset_id()).qualities['NumberOfClasses'])
 
@@ -115,7 +117,7 @@ if nr_classes != 2:
         'objective': 'multi:softmax',
         'num_class': nr_classes + 1,
         'disable_default_eval_metric': 1,
-        'seed':args.seed,
+        'seed': args.seed,
         'nthread': 2,
     }
 else:
@@ -187,7 +189,7 @@ optimizer_choices = {
 optimizer = optimizer_choices[args.optimizer]
 
 bohb = optimizer(
-    configspace = XGBoostWorker.get_amazon_configspace(),
+    configspace = model_worker.get_default_configspace(seed=args.seed),
 	run_id = args.run_id,
     host=host,
 	nameserver=ns_host,

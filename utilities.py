@@ -28,10 +28,22 @@ def get_dataset_split(dataset, val_fraction=0.2, test_fraction=0.2, seed=11):
         dataset_format='array',
         target=dataset.default_target_attribute,
     )
-
     # TODO move the imputer and scaler into its own method in the future.
     imputer = SimpleImputer(strategy='most_frequent')
     label_encoder = LabelEncoder()
+
+    empty_features = []
+    # detect features that are null
+    for feature_index in range(0, X.shape[1]):
+        nan_mask = np.isnan(X[:, feature_index])
+        nan_verdict = np.all(nan_mask)
+        if nan_verdict:
+            empty_features.append(feature_index)
+    # remove feature indicators from categorical indicator since
+    # they will be deleted from simple imputer.
+    for feature_index in sorted(empty_features, reverse=True):
+        del categorical_indicator[feature_index]
+
     X = imputer.fit_transform(X)
     y = label_encoder.fit_transform(y)
     X_train, X_test, y_train, y_test = train_test_split(
@@ -174,6 +186,28 @@ def read_xgboost_values(working_directory, seed=11, model_name='xgboost'):
     return xgboost_result_dir
 
 
+def read_autosklearn_values(working_directory, seed=11, model_name='autosklearn'):
+
+    autosklearn_result_dir = {}
+    benchmark_task_file = 'benchmark_datasets.txt'
+    benchmark_task_file_path = os.path.join(working_directory, benchmark_task_file)
+    result_directory = os.path.join(working_directory, model_name)
+    task_ids = get_task_list(benchmark_task_file_path)
+    for task_id in task_ids:
+        task_result_directory = os.path.join(result_directory, f'{seed}', f'{task_id}', 'results')
+        try:
+            with open(os.path.join(task_result_directory, 'performance.txt'), 'r') as baseline_file:
+                baseline_test_acc = float(baseline_file.readline())
+                autosklearn_result_dir[task_id] = baseline_test_acc
+        except FileNotFoundError:
+            print(f'Task {task_id} not finished.')
+            autosklearn_result_dir[task_id] = None
+            continue
+
+    return autosklearn_result_dir
+
+
+
 def read_cocktail_values(cocktail_result_dir, benchmark_task_file_dir):
 
     cocktail_result_dict = {}
@@ -222,17 +256,24 @@ def compare_models(xgboost_dir, cocktail_dir):
 
     xgboost_results = read_xgboost_values(xgboost_dir)
     cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
+    autosklearn_results = read_autosklearn_values(cocktail_dir)
+
     table_dict = {
         'Task Id': [],
         'XGBoost': [],
+        'AutoSklearn': [],
         'Cocktail': [],
     }
 
     cocktail_wins = 0
     cocktail_losses = 0
     cocktail_ties = 0
+    autosklearn_looses = 0
+    autosklearn_ties = 0
+    autosklearn_wins = 0
     cocktail_performances = []
     xgboost_performances = []
+    autosklearn_performances = []
     print(cocktail_results)
     print(xgboost_results)
 
@@ -241,25 +282,37 @@ def compare_models(xgboost_dir, cocktail_dir):
         if xgboost_task_result is None:
             continue
         cocktail_task_result = cocktail_results[task_id]
+        autosklearn_task_result = autosklearn_results[task_id]
         cocktail_performances.append(cocktail_task_result)
         xgboost_performances.append(xgboost_task_result)
+        autosklearn_performances.append(autosklearn_task_result)
         if cocktail_task_result > xgboost_task_result:
             cocktail_wins += 1
         elif cocktail_task_result < xgboost_task_result:
             cocktail_losses += 1
         else:
             cocktail_ties += 1
+        if autosklearn_task_result > xgboost_task_result:
+            autosklearn_wins += 1
+        elif autosklearn_task_result < xgboost_task_result:
+            autosklearn_looses += 1
+        else:
+            autosklearn_ties += 1
         table_dict['Task Id'].append(task_id)
         table_dict['XGBoost'].append(xgboost_task_result)
         table_dict['Cocktail'].append(cocktail_task_result)
+        table_dict['AutoSklearn'].append(autosklearn_task_result)
 
         comparison_table = pd.DataFrame.from_dict(table_dict)
         comparison_table.to_csv(os.path.join(xgboost_dir, 'table_comparison.csv'), index=False)
 
 
     _, p_value = wilcoxon(cocktail_performances, xgboost_performances)
-    print(f'Cocktail wins: {cocktail_wins}, ties: {cocktail_ties}, looses: {cocktail_losses}')
+    print(f'Cocktail wins: {cocktail_wins}, ties: {cocktail_ties}, looses: {cocktail_losses} against XGBoost')
     print(f'P-value: {p_value}')
+    _, p_value = wilcoxon(xgboost_performances, autosklearn_performances)
+    print(f'Xgboost vs AutoSklearn, P-value: {p_value}')
+    print(f'AutoSklearn wins: {autosklearn_wins}, ties: {autosklearn_ties}, looses: {autosklearn_looses} against XGBoost')
 
 xgboost_dir = os.path.expanduser(
     os.path.join(

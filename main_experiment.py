@@ -103,7 +103,6 @@ np.random.seed(args.seed)
 random.seed(args.seed)
 
 host = hpns.nic_name_to_host(args.nic_name)
-print(f'Experiment started with task id: {args.task_id}')
 loader = Loader(task_id=args.task_id)
 
 #
@@ -154,6 +153,7 @@ if args.worker:
     worker.run(background=False)
     exit(0)
 
+print(f'Experiment started with task id: {args.task_id}')
 run_directory = os.path.join(
     args.working_directory,
     f'{args.task_id}',
@@ -190,11 +190,11 @@ optimizer = optimizer_choices[args.optimizer]
 
 bohb = optimizer(
     configspace = model_worker.get_default_configspace(seed=args.seed),
-	run_id = args.run_id,
+    run_id = args.run_id,
     host=host,
-	nameserver=ns_host,
-	nameserver_port=ns_port,
-	min_budget=args.min_budget,
+    nameserver=ns_host,
+    nameserver_port=ns_port,
+    min_budget=args.min_budget,
     max_budget=args.max_budget,
     result_logger=result_logger,
 )
@@ -235,4 +235,3 @@ refit_result = worker.refit(best_config)
 
 with open(os.path.join(run_directory, 'refit_result.json'), 'w') as file:
     json.dump(refit_result, file)
-

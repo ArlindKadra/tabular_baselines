@@ -386,18 +386,22 @@ class TabNetWorker(Worker):
             scheduler_fn=torch.optim.lr_scheduler.StepLR,
         )
         batch_size = config['batch_size']
-        if batch_size > 4096:
+        if batch_size == 32768:
             vbatch_size = config['vbatch_size1']
-        elif batch_size == 4096:
+        elif batch_size == 16384:
             vbatch_size = config['vbatch_size2']
-        elif batch_size == 2048:
+        elif batch_size == 8192:
             vbatch_size = config['vbatch_size3']
-        elif batch_size == 1024:
+        elif batch_size == 4096:
             vbatch_size = config['vbatch_size4']
+        elif batch_size == 2048:
+            vbatch_size = config['vbatch_size5']
+        elif batch_size == 1024:
+            vbatch_size = config['vbatch_size6']
         elif batch_size == 512:
-            vbatch_size = config['vbatch_size5']
+            vbatch_size = config['vbatch_size7']
         elif batch_size == 256:
-            vbatch_size = config['vbatch_size5']
+            vbatch_size = config['vbatch_size8']
         else:
             raise ValueError('Illegal batch size given')
 
@@ -472,18 +476,22 @@ class TabNetWorker(Worker):
             scheduler_fn=torch.optim.lr_scheduler.StepLR,
         )
         batch_size = config['batch_size']
-        if batch_size > 4096:
+        if batch_size == 32768:
             vbatch_size = config['vbatch_size1']
-        elif batch_size == 4096:
+        elif batch_size == 16384:
             vbatch_size = config['vbatch_size2']
-        elif batch_size == 2048:
+        elif batch_size == 8192:
             vbatch_size = config['vbatch_size3']
-        elif batch_size == 1024:
+        elif batch_size == 4096:
             vbatch_size = config['vbatch_size4']
+        elif batch_size == 2048:
+            vbatch_size = config['vbatch_size5']
+        elif batch_size == 1024:
+            vbatch_size = config['vbatch_size6']
         elif batch_size == 512:
-            vbatch_size = config['vbatch_size5']
+            vbatch_size = config['vbatch_size7']
         elif batch_size == 256:
-            vbatch_size = config['vbatch_size5']
+            vbatch_size = config['vbatch_size8']
         else:
             raise ValueError('Illegal batch size given')
 
@@ -517,57 +525,69 @@ class TabNetWorker(Worker):
         config_space = CS.ConfigurationSpace()
         # learning rate
         config_space.add_hyperparameter(
-            CS.OrdinalHyperparameter(
+            CS.CategoricalHyperparameter(
                 'na',
-                sequence=[8, 16, 24, 32, 64, 128],
+                choices=[8, 16, 24, 32, 64, 128],
             )
         )
         config_space.add_hyperparameter(
-            CS.OrdinalHyperparameter(
+            CS.CategoricalHyperparameter(
                 'learning_rate',
-                sequence=[0.005, 0.01, 0.02, 0.025],
+                choices=[0.005, 0.01, 0.02, 0.025],
             )
         )
         config_space.add_hyperparameter(
-            CS.OrdinalHyperparameter(
+            CS.CategoricalHyperparameter(
                 'gamma',
-                sequence=[1.0, 1.2, 1.5, 2.0],
+                choices=[1.0, 1.2, 1.5, 2.0],
             )
         )
         config_space.add_hyperparameter(
-            CS.OrdinalHyperparameter(
+            CS.CategoricalHyperparameter(
                 'nsteps',
-                sequence=[3, 4, 5, 6, 7, 8, 9, 10],
+                choices=[3, 4, 5, 6, 7, 8, 9, 10],
             )
         )
         config_space.add_hyperparameter(
-            CS.OrdinalHyperparameter(
+            CS.CategoricalHyperparameter(
                 'lambda_sparse',
-                sequence=[0, 0.000001, 0.0001, 0.001, 0.01, 0.1],
+                choices=[0, 0.000001, 0.0001, 0.001, 0.01, 0.1],
             )
         )
-        batch_size = CS.OrdinalHyperparameter(
+        batch_size = CS.CategoricalHyperparameter(
             'batch_size',
-            sequence=[256, 512, 1024, 2048, 4096, 8192, 16384, 32768],
+            choices=[256, 512, 1024, 2048, 4096, 8192, 16384, 32768],
         )
-        vbatch_size1 = CS.OrdinalHyperparameter(
+        vbatch_size1 = CS.CategoricalHyperparameter(
             'vbatch_size1',
-            sequence=[256, 512, 1024, 2048, 4096],
+            choices=[256, 512, 1024, 2048, 4096],
         )
-        vbatch_size2 = CS.OrdinalHyperparameter(
+        vbatch_size2 = CS.CategoricalHyperparameter(
             'vbatch_size2',
-            sequence=[256, 512, 1024, 2048],
+            choices=[256, 512, 1024, 2048, 4096],
         )
-        vbatch_size3 = CS.OrdinalHyperparameter(
+        vbatch_size3 = CS.CategoricalHyperparameter(
             'vbatch_size3',
-            sequence=[256, 512, 1024],
+            choices=[256, 512, 1024, 2048, 4096],
         )
-        vbatch_size4 = CS.OrdinalHyperparameter(
+        vbatch_size4 = CS.CategoricalHyperparameter(
             'vbatch_size4',
-            sequence=[256, 512],
+            choices=[256, 512, 1024, 2048],
         )
-        vbatch_size5 = CS.Constant(
+        vbatch_size5 = CS.CategoricalHyperparameter(
             'vbatch_size5',
+            choices=[256, 512, 1024],
+        )
+        vbatch_size6 = CS.CategoricalHyperparameter(
+            'vbatch_size6',
+            choices=[256, 512],
+        )
+        vbatch_size7 = CS.Constant(
+            'vbatch_size7',
+            256
+        )
+        vbatch_size8 = CS.Constant(
+            'vbatch_size8',
             256
         )
         config_space.add_hyperparameter(
@@ -580,6 +600,9 @@ class TabNetWorker(Worker):
                 vbatch_size3,
                 vbatch_size4,
                 vbatch_size5,
+                vbatch_size6,
+                vbatch_size7,
+                vbatch_size8,
             ]
         )
         config_space.add_hyperparameter(
@@ -602,39 +625,59 @@ class TabNetWorker(Worker):
         )
 
         config_space.add_condition(
-            CS.GreaterThanCondition(
+            CS.EqualsCondition(
                 vbatch_size1,
                 batch_size,
-                4096,
+                32768,
             )
         )
         config_space.add_condition(
             CS.EqualsCondition(
                 vbatch_size2,
                 batch_size,
-                4096,
+                16384,
             )
         )
         config_space.add_condition(
             CS.EqualsCondition(
                 vbatch_size3,
                 batch_size,
-                2048,
+                8192,
             )
         )
         config_space.add_condition(
             CS.EqualsCondition(
                 vbatch_size4,
                 batch_size,
+                4096,
+            )
+        )
+        config_space.add_condition(
+            CS.EqualsCondition(
+                vbatch_size5,
+                batch_size,
+                2048,
+            )
+        )
+        config_space.add_condition(
+            CS.EqualsCondition(
+                vbatch_size6,
+                batch_size,
                 1024,
             )
         )
-        # the two following statements can be probably grouped with less than
         config_space.add_condition(
-            CS.LessThanCondition(
-                vbatch_size5,
+            CS.EqualsCondition(
+                vbatch_size7,
                 batch_size,
-                1024,
+                512,
+            )
+        )
+        config_space.add_condition(
+            CS.EqualsCondition(
+                vbatch_size8,
+                batch_size,
+                256,
             )
         )
 

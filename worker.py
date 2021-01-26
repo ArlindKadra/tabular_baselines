@@ -5,7 +5,9 @@ from typing import Tuple
 import ConfigSpace as CS
 from hpbandster.core.worker import Worker
 import numpy as np
+from pytorch_tabnet.tab_model import TabNetClassifier
 from sklearn.metrics import balanced_accuracy_score
+import torch
 import xgboost as xgb
 
 
@@ -259,7 +261,7 @@ class XGBoostWorker(Worker):
             CS.UniformIntegerHyperparameter(
                 'num_round',
                 lower=1,
-                upper=1000,
+                upper=100,
             )
         )
         config_space.add_hyperparameter(
@@ -318,6 +320,321 @@ class XGBoostWorker(Worker):
                 'subsample',
                 lower=0.01,
                 upper=1,
+            )
+        )
+
+        return config_space
+
+
+class TabNetWorker(Worker):
+
+    def __init__(self, *args, param=None, splits=None, categorical_ind=None, **kwargs):
+
+        super().__init__(*args, **kwargs)
+        self.param=param
+        self.splits = splits
+        self.categorical_ind = categorical_ind
+
+
+    def compute(self, config, budget, **kwargs):
+        """
+        Simple example for a compute function
+        The loss is just a the config + some noise (that decreases with the budget)
+        For dramatization, the function can sleep for a given interval to emphasizes
+        the speed ups achievable with parallel workers.
+        Args:
+            config: dictionary containing the sampled configurations by the optimizer
+            budget: (float) amount of time/epochs/etc. the model can use to train
+        Returns:
+            dictionary with mandatory fields:
+                'loss' (scalar)
+                'info' (dict)
+        """
+        X_train = self.splits['X_train']
+        X_val = self.splits['X_val']
+        X_test = self.splits['X_test']
+        y_train = self.splits['y_train']
+        y_val = self.splits['y_val']
+        y_test = self.splits['y_test']
+
+        categorical_columns = []
+        categorical_dimensions = []
+        for index, categorical_column in enumerate(self.categorical_ind):
+            if categorical_column:
+                categorical_columns.append(index)
+                # column_unique_values = len(set(X_train[:,index]))
+                column_max_index = int(max(X_train[:,index]))
+                categorical_dimensions.append(column_max_index + 1)
+
+        clf = TabNetClassifier(
+            n_a=config['na'],
+            n_d=config['na'],
+            n_steps=config['nsteps'],
+            gamma=config['gamma'],
+            lambda_sparse=config['lambda_sparse'],
+            momentum=config['mb'],
+            cat_idxs=categorical_columns,
+            cat_dims=categorical_dimensions,
+            seed=self.param['seed'],
+            optimizer_params={
+                'lr': config['learning_rate'],
+            },
+            scheduler_params={
+                'step_size': config['decay_iterations'],
+                'gamma': config['decay_rate'],
+            },
+            scheduler_fn=torch.optim.lr_scheduler.StepLR,
+        )
+        batch_size = config['batch_size']
+        if batch_size > 4096:
+            vbatch_size = config['vbatch_size1']
+        elif batch_size == 4096:
+            vbatch_size = config['vbatch_size2']
+        elif batch_size == 2048:
+            vbatch_size = config['vbatch_size3']
+        elif batch_size == 1024:
+            vbatch_size = config['vbatch_size4']
+        elif batch_size == 512:
+            vbatch_size = config['vbatch_size5']
+        elif batch_size == 256:
+            vbatch_size = config['vbatch_size5']
+        else:
+            raise ValueError('Illegal batch size given')
+
+        clf.fit(
+            X_train=X_train, y_train=y_train,
+            batch_size=batch_size,
+            virtual_batch_size=vbatch_size,
+            eval_set=[(X_val, y_val)],
+            eval_name=['Validation'],
+            eval_metric=['balanced_accuracy'],
+            max_epochs=200,
+            patience=0,
+        )
+
+        y_train_preds = clf.predict(X_train)
+        y_val_preds = clf.predict(X_val)
+        y_test_preds = clf.predict(X_test)
+
+        train_performance = balanced_accuracy_score(y_train, y_train_preds)
+        val_performance = balanced_accuracy_score(y_val, y_val_preds)
+        test_performance = balanced_accuracy_score(y_test, y_test_preds)
+
+        if val_performance is None or val_performance is np.inf:
+            val_error_rate = 1
+        else:
+            val_error_rate = 1 - val_performance
+
+        res = {
+            'train_accuracy': float(train_performance),
+            'val_accuracy': float(val_performance),
+            'test_accuracy': float(test_performance),
+        }
+
+        return ({
+            'loss': float(val_error_rate),  # this is the a mandatory field to run hyperband
+            'info': res  # can be used for any user-defined information - also mandatory
+        })
+
+    def refit(self, config):
+
+        X_train = self.splits['X_train']
+        X_test = self.splits['X_test']
+        y_train = self.splits['y_train']
+        y_test = self.splits['y_test']
+
+        categorical_columns = []
+        categorical_dimensions = []
+        for index, categorical_column in enumerate(self.categorical_ind):
+            if categorical_column:
+                categorical_columns.append(index)
+                # column_unique_values = len(set(X_train[:,index]))
+                column_max_index = int(max(X_train[:, index]))
+                categorical_dimensions.append(column_max_index + 1)
+
+        clf = TabNetClassifier(
+            n_a=config['na'],
+            n_d=config['na'],
+            n_steps=config['nsteps'],
+            gamma=config['gamma'],
+            lambda_sparse=config['lambda_sparse'],
+            momentum=config['mb'],
+            cat_idxs=categorical_columns,
+            cat_dims=categorical_dimensions,
+            seed=self.param['seed'],
+            optimizer_params={
+                'lr': config['learning_rate'],
+            },
+            scheduler_params={
+                'step_size': config['decay_iterations'],
+                'gamma': config['decay_rate'],
+            },
+            scheduler_fn=torch.optim.lr_scheduler.StepLR,
+        )
+        batch_size = config['batch_size']
+        if batch_size > 4096:
+            vbatch_size = config['vbatch_size1']
+        elif batch_size == 4096:
+            vbatch_size = config['vbatch_size2']
+        elif batch_size == 2048:
+            vbatch_size = config['vbatch_size3']
+        elif batch_size == 1024:
+            vbatch_size = config['vbatch_size4']
+        elif batch_size == 512:
+            vbatch_size = config['vbatch_size5']
+        elif batch_size == 256:
+            vbatch_size = config['vbatch_size5']
+        else:
+            raise ValueError('Illegal batch size given')
+
+        clf.fit(
+            X_train=X_train, y_train=y_train,
+            batch_size=batch_size,
+            virtual_batch_size=vbatch_size,
+            eval_metric=['balanced_accuracy'],
+            max_epochs=200,
+        )
+
+        y_train_preds = clf.predict(X_train)
+        y_test_preds = clf.predict(X_test)
+
+        train_performance = balanced_accuracy_score(y_train, y_train_preds)
+        test_performance = balanced_accuracy_score(y_test, y_test_preds)
+
+        if test_performance is None or test_performance is np.inf:
+            test_performance = 0
+
+        res = {
+            'train_accuracy': float(train_performance),
+            'test_accuracy': float(test_performance),
+        }
+
+        return res
+
+    @staticmethod
+    def get_default_configspace():
+
+        config_space = CS.ConfigurationSpace()
+        # learning rate
+        config_space.add_hyperparameter(
+            CS.OrdinalHyperparameter(
+                'na',
+                sequence=[8, 16, 24, 32, 64, 128],
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.OrdinalHyperparameter(
+                'learning_rate',
+                sequence=[0.005, 0.01, 0.02, 0.025],
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.OrdinalHyperparameter(
+                'gamma',
+                sequence=[1.0, 1.2, 1.5, 2.0],
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.OrdinalHyperparameter(
+                'nsteps',
+                sequence=[3, 4, 5, 6, 7, 8, 9, 10],
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.OrdinalHyperparameter(
+                'lambda_sparse',
+                sequence=[0, 0.000001, 0.0001, 0.001, 0.01, 0.1],
+            )
+        )
+        batch_size = CS.OrdinalHyperparameter(
+            'batch_size',
+            sequence=[256, 512, 1024, 2048, 4096, 8192, 16384, 32768],
+        )
+        vbatch_size1 = CS.OrdinalHyperparameter(
+            'vbatch_size1',
+            sequence=[256, 512, 1024, 2048, 4096],
+        )
+        vbatch_size2 = CS.OrdinalHyperparameter(
+            'vbatch_size2',
+            sequence=[256, 512, 1024, 2048],
+        )
+        vbatch_size3 = CS.OrdinalHyperparameter(
+            'vbatch_size3',
+            sequence=[256, 512, 1024],
+        )
+        vbatch_size4 = CS.OrdinalHyperparameter(
+            'vbatch_size4',
+            sequence=[256, 512],
+        )
+        vbatch_size5 = CS.Constant(
+            'vbatch_size5',
+            256
+        )
+        config_space.add_hyperparameter(
+            batch_size
+        )
+        config_space.add_hyperparameters(
+            [
+                vbatch_size1,
+                vbatch_size2,
+                vbatch_size3,
+                vbatch_size4,
+                vbatch_size5,
+            ]
+        )
+        config_space.add_hyperparameter(
+            CS.CategoricalHyperparameter(
+                'decay_rate',
+                choices=[0.4, 0.8, 0.9, 0.95],
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.CategoricalHyperparameter(
+                'decay_iterations',
+                choices=[500, 2000, 8000, 10000, 20000],
+            )
+        )
+        config_space.add_hyperparameter(
+            CS.CategoricalHyperparameter(
+                'mb',
+                choices=[0.6, 0.7, 0.8, 0.9, 0.95, 0.98],
+            )
+        )
+
+        config_space.add_condition(
+            CS.GreaterThanCondition(
+                vbatch_size1,
+                batch_size,
+                4096,
+            )
+        )
+        config_space.add_condition(
+            CS.EqualsCondition(
+                vbatch_size2,
+                batch_size,
+                4096,
+            )
+        )
+        config_space.add_condition(
+            CS.EqualsCondition(
+                vbatch_size3,
+                batch_size,
+                2048,
+            )
+        )
+        config_space.add_condition(
+            CS.EqualsCondition(
+                vbatch_size4,
+                batch_size,
+                1024,
+            )
+        )
+        # the two following statements can be probably grouped with less than
+        config_space.add_condition(
+            CS.LessThanCondition(
+                vbatch_size5,
+                batch_size,
+                1024,
             )
         )
 

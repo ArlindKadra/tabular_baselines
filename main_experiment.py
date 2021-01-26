@@ -19,7 +19,7 @@ from utilities import \
     check_leak_status, \
     check_split_stratification
 
-from worker import XGBoostWorker
+from worker import XGBoostWorker, TabNetWorker
 
 
 parser = argparse.ArgumentParser(
@@ -48,6 +48,12 @@ parser.add_argument(
     type=str,
     help='Which optimizer to use for the experiment.',
     default='bohb',
+)
+parser.add_argument(
+    '--model',
+    type=str,
+    help='Which model to use for the experiment.',
+    default='tabnet',
 )
 parser.add_argument(
     '--task_id',
@@ -120,13 +126,20 @@ else:
         'nthread': 2,
     }
 
+worker_choices = {
+    'tabnet': TabNetWorker,
+    'xgboost': XGBoostWorker,
+}
+
+model_worker = worker_choices[args.model]
 if args.worker:
     time.sleep(5)  # short artificial delay to make sure the nameserver is already running
-    worker = XGBoostWorker(
+    worker = model_worker(
         run_id=args.run_id,
         host=host,
         param=param,
         splits=loader.get_splits(),
+        categorical_ind=loader.categorical_ind,
     )
     while True:
         try:
@@ -154,11 +167,12 @@ NS = hpns.NameServer(
 )
 ns_host, ns_port = NS.start()
 
-worker = XGBoostWorker(
+worker = model_worker(
     run_id=args.run_id,
     host=host,
     param=param,
     splits=loader.get_splits(),
+    categorical_ind=loader.categorical_ind,
     nameserver=ns_host,
     nameserver_port=ns_port
 )
@@ -208,11 +222,12 @@ print('Total budget corresponds to %.1f full function evaluations.'%(sum([r.budg
 print('The run took  %.1f seconds to complete.'%(all_runs[-1].time_stamps['finished'] - all_runs[0].time_stamps['started']))
 
 loader = Loader(task_id=args.task_id, val_fraction=0)
-worker = XGBoostWorker(
-        args.run_id,
-        param=param,
-        splits=loader.get_splits(),
-        nameserver='127.0.0.1',
+worker = model_worker(
+    args.run_id,
+    param=param,
+    splits=loader.get_splits(),
+    categorical_ind=loader.categorical_ind,
+    nameserver='127.0.0.1',
 )
 refit_result = worker.refit(best_config)
 

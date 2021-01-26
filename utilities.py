@@ -28,12 +28,11 @@ def get_dataset_split(dataset, val_fraction=0.2, test_fraction=0.2, seed=11):
         dataset_format='array',
         target=dataset.default_target_attribute,
     )
+
     # TODO move the imputer and scaler into its own method in the future.
-    enc = OneHotEncoder(handle_unknown='ignore')
     imputer = SimpleImputer(strategy='most_frequent')
     label_encoder = LabelEncoder()
     X = imputer.fit_transform(X)
-    X = enc.fit_transform(X)
     y = label_encoder.fit_transform(y)
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -69,7 +68,7 @@ def get_dataset_split(dataset, val_fraction=0.2, test_fraction=0.2, seed=11):
         dataset_splits['y_train'] = y_train
         dataset_splits['y_val'] = y_val
 
-    return dataset_splits
+    return categorical_indicator, dataset_splits
 
 
 def get_dataset_openml(task_id=11):
@@ -78,6 +77,7 @@ def get_dataset_openml(task_id=11):
     dataset = task.get_dataset()
 
     return dataset
+
 
 def check_leak_status(splits):
 
@@ -280,4 +280,3 @@ cocktail_dir = os.path.expanduser(
     )
 )
 # compare_models(xgboost_dir, cocktail_dir)
-

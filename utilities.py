@@ -254,12 +254,14 @@ def read_cocktail_values(cocktail_result_dir, benchmark_task_file_dir):
 
 def compare_models(xgboost_dir, cocktail_dir):
 
-    xgboost_results = read_xgboost_values(xgboost_dir)
+    xgboost_results = read_xgboost_values(xgboost_dir, model_name='xgboost')
+    # tabnet_results = read_xgboost_values(xgboost_dir, model_name='tabnet')
     cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
     autosklearn_results = read_autosklearn_values(cocktail_dir)
 
     table_dict = {
         'Task Id': [],
+        #'Tabnet': [],
         'XGBoost': [],
         'AutoSklearn': [],
         'Cocktail': [],
@@ -281,6 +283,7 @@ def compare_models(xgboost_dir, cocktail_dir):
         xgboost_task_result = xgboost_results[task_id]
         if xgboost_task_result is None:
             continue
+        #tabnet_task_result = tabnet_results[task_id]
         cocktail_task_result = cocktail_results[task_id]
         autosklearn_task_result = autosklearn_results[task_id]
         cocktail_performances.append(cocktail_task_result)
@@ -299,6 +302,7 @@ def compare_models(xgboost_dir, cocktail_dir):
         else:
             autosklearn_ties += 1
         table_dict['Task Id'].append(task_id)
+        #table_dict['Tabnet'].append(tabnet_task_result)
         table_dict['XGBoost'].append(xgboost_task_result)
         table_dict['Cocktail'].append(cocktail_task_result)
         table_dict['AutoSklearn'].append(autosklearn_task_result)

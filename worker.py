@@ -31,11 +31,12 @@ def balanced_error(
 
 class XGBoostWorker(Worker):
 
-    def __init__(self, *args, param=None, splits=None, **kwargs):
+    def __init__(self, *args, param=None, splits=None, categorical_ind=None, **kwargs):
 
         super().__init__(*args, **kwargs)
         self.param=param
         self.splits = splits
+        self.categorical_ind = categorical_ind
 
         if self.param['objective'] == 'binary:logistic':
             self.threshold_predictions = True

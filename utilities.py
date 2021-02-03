@@ -12,6 +12,12 @@ from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
 
+import pandas as pd
+import seaborn as sns
+from scipy.stats import wilcoxon
+import matplotlib.pyplot as plt
+sns.set(rc={'figure.figsize':(11.7, 8.27),"font.size": 36,"axes.titlesize": 39, "axes.labelsize": 39, "xtick.labelsize": 39, "ytick.labelsize": 39}, style="white")
+
 # openml split, not the one used for my experiments.
 """
 train_indices, test_indices = task.get_train_test_split_indices()
@@ -80,7 +86,27 @@ def get_dataset_split(dataset, val_fraction=0.2, test_fraction=0.2, seed=11):
         dataset_splits['y_train'] = y_train
         dataset_splits['y_val'] = y_val
 
-    return categorical_indicator, dataset_splits
+        categorical_columns = []
+        categorical_dimensions = []
+
+        for index, categorical_column in enumerate(categorical_indicator):
+            if categorical_column:
+                column_unique_values = len(set(X[:, index]))
+                column_max_index = int(max(X[:, index]))
+                # categorical columns with only one unique value
+                # do not need an embedding.
+                if column_unique_values == 1:
+                    continue
+                categorical_columns.append(index)
+                categorical_dimensions.append(column_max_index + 1)
+
+        categorical_information = {
+            'categorical_ind': categorical_indicator,
+            'categorical_columns': categorical_columns,
+            'categorical_dimensions': categorical_dimensions,
+        }
+
+    return categorical_information, dataset_splits
 
 
 def get_dataset_openml(task_id=11):
@@ -255,13 +281,13 @@ def read_cocktail_values(cocktail_result_dir, benchmark_task_file_dir):
 def compare_models(xgboost_dir, cocktail_dir):
 
     xgboost_results = read_xgboost_values(xgboost_dir, model_name='xgboost')
-    # tabnet_results = read_xgboost_values(xgboost_dir, model_name='tabnet')
+    tabnet_results = read_xgboost_values(xgboost_dir, model_name='tabnet')
     cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
     autosklearn_results = read_autosklearn_values(cocktail_dir)
 
     table_dict = {
         'Task Id': [],
-        #'Tabnet': [],
+        'Tabnet': [],
         'XGBoost': [],
         'AutoSklearn': [],
         'Cocktail': [],
@@ -283,7 +309,7 @@ def compare_models(xgboost_dir, cocktail_dir):
         xgboost_task_result = xgboost_results[task_id]
         if xgboost_task_result is None:
             continue
-        #tabnet_task_result = tabnet_results[task_id]
+        tabnet_task_result = tabnet_results[task_id]
         cocktail_task_result = cocktail_results[task_id]
         autosklearn_task_result = autosklearn_results[task_id]
         cocktail_performances.append(cocktail_task_result)
@@ -302,13 +328,24 @@ def compare_models(xgboost_dir, cocktail_dir):
         else:
             autosklearn_ties += 1
         table_dict['Task Id'].append(task_id)
-        #table_dict['Tabnet'].append(tabnet_task_result)
-        table_dict['XGBoost'].append(xgboost_task_result)
-        table_dict['Cocktail'].append(cocktail_task_result)
-        table_dict['AutoSklearn'].append(autosklearn_task_result)
+        if tabnet_task_result is not None:
+            table_dict['Tabnet'].append(f'{tabnet_task_result * 100:.3f}')
+        else:
+            table_dict['Tabnet'].append(tabnet_task_result)
+        table_dict['XGBoost'].append(f'{xgboost_task_result * 100:.3f}')
+        table_dict['Cocktail'].append(f'{cocktail_task_result * 100:.3f}')
+        table_dict['AutoSklearn'].append(f'{autosklearn_task_result * 100:.3f}')
 
         comparison_table = pd.DataFrame.from_dict(table_dict)
-        comparison_table.to_csv(os.path.join(xgboost_dir, 'table_comparison.csv'), index=False)
+    print(
+        comparison_table.to_latex(
+            index=False,
+            caption='The performances of the Regularization Cocktail and the state-of-the-art competitors over the different datasets.',
+            label='app:cocktail_vs_benchmarks_table',
+        )
+    )
+    comparison_table.to_csv(os.path.join(xgboost_dir, 'table_comparison.csv'), index=False)
+
 
 
     _, p_value = wilcoxon(cocktail_performances, xgboost_performances)
@@ -317,6 +354,46 @@ def compare_models(xgboost_dir, cocktail_dir):
     _, p_value = wilcoxon(xgboost_performances, autosklearn_performances)
     print(f'Xgboost vs AutoSklearn, P-value: {p_value}')
     print(f'AutoSklearn wins: {autosklearn_wins}, ties: {autosklearn_ties}, looses: {autosklearn_looses} against XGBoost')
+
+def build_cd_diagram(
+    xgboost_dir,
+    cocktail_dir,
+):
+    xgboost_results = read_xgboost_values(xgboost_dir, model_name='xgboost')
+    tabnet_results = read_xgboost_values(xgboost_dir, model_name='tabnet')
+    cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
+    autosklearn_results = read_autosklearn_values(cocktail_dir)
+
+    models = ['Regularization Cocktail', 'XGBoost', 'AutoSklearn-GB', 'TabNet']
+    table_results = {
+        'Network': [],
+        'Task Id': [],
+        'Balanced Accuracy': [],
+    }
+    for task_id in cocktail_results:
+        for model_name in models:
+            try:
+                if model_name == 'Regularization Cocktail':
+                    task_result = cocktail_results[task_id]
+                elif model_name == 'XGBoost':
+                    task_result = xgboost_results[task_id]
+                elif model_name == 'TabNet':
+                    task_result = tabnet_results[task_id]
+                elif model_name == 'AutoSklearn-GB':
+                    task_result = autosklearn_results[task_id]
+                else:
+                    raise ValueError("Illegal model value")
+            except Exception:
+                task_result = 0
+                print(f'No results for task: {task_id} for model: {model_name}')
+
+            table_results['Network'].append(model_name)
+            table_results['Task Id'].append(task_id)
+            table_results['Balanced Accuracy'].append(task_result)
+
+    result_df = pd.DataFrame(data=table_results)
+    result_df.to_csv(os.path.join(xgboost_dir, f'cd_data.csv'), index=False)
+
 
 xgboost_dir = os.path.expanduser(
     os.path.join(
@@ -336,4 +413,83 @@ cocktail_dir = os.path.expanduser(
         'NEMO',
     )
 )
-# compare_models(xgboost_dir, cocktail_dir)
+#compare_models(xgboost_dir, cocktail_dir)
+#build_cd_diagram(xgboost_dir, cocktail_dir)
+
+def plot_models(
+    xgboost_dir,
+    cocktail_dir,
+):
+    cocktail_wins = 0
+    cocktail_draws = 0
+    cocktail_looses = 0
+    stat_reg_results = []
+    stat_baseline_results = []
+    comparison_train_accuracies = []
+    comparison_test_accuracies = []
+    task_nr_features = []
+    task_nr_examples = []
+
+    xgboost_results = read_xgboost_values(xgboost_dir, model_name='xgboost')
+    cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
+    task_ids = xgboost_results.keys()
+
+    with open(os.path.join(cocktail_dir, 'task_metadata.json'), 'r') as file:
+        task_metadata = json.load(file)
+
+    for task_id in task_ids:
+
+        benchmark_task_result = xgboost_results[task_id]
+        cocktail_task_result = cocktail_results[task_id]
+        if benchmark_task_result is None:
+            continue
+
+        stat_reg_results.append(cocktail_task_result)
+        stat_baseline_results.append(benchmark_task_result)
+        if cocktail_task_result > benchmark_task_result:
+            cocktail_wins +=1
+        elif cocktail_task_result == benchmark_task_result:
+            cocktail_draws += 1
+        else:
+            cocktail_looses +=1
+        comparison_test_accuracies.append(cocktail_task_result / benchmark_task_result)
+        task_nr_examples.append(task_metadata[f'{task_id}'][0])
+        task_nr_features.append(task_metadata[f'{task_id}'][1])
+
+
+    plt.scatter(task_nr_examples, comparison_test_accuracies, s=100, c='#273E47', label='Test accuracy')
+    plt.axhline(y=1, color='r', linestyle='-', linewidth=3)
+    plt.xscale('log')
+    plt.xlabel("Number of Examples")
+    plt.ylabel("Gain")
+    plt.tick_params(
+        axis='x',  # changes apply to the x-axis
+        which='both',  # both major and minor ticks are affected
+        top=False,
+        bottom=True,
+        # ticks along the top edge are off
+    )
+    plt.tick_params(
+        axis='y',  # changes apply to the x-axis
+        which='both',  # both major and minor ticks are affected
+        left=True,
+        right=False,
+        # ticks along the top edge are off
+    )
+
+    _, p_value = wilcoxon(stat_reg_results, stat_baseline_results)
+    print(f'P Value: {p_value:.5f}')
+    print(f'Cocktail Win'
+          f''
+          f's: {cocktail_wins}, Draws:{cocktail_draws}, Loses: {cocktail_looses}')
+    plt.title(f'Wins: {cocktail_wins}, '
+              f'Losses: {cocktail_looses}, '
+              f'Draws: {cocktail_draws} \n p-value: {p_value:.4f}')
+    plt.savefig(
+        'cocktail_gain_xgboost.pdf',
+        bbox_inches='tight',
+        pad_inches=0.15,
+        margins=0.1,
+    )
+
+# plot_models(xgboost_dir, cocktail_dir)

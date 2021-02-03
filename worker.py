@@ -31,12 +31,12 @@ def balanced_error(
 
 class XGBoostWorker(Worker):
 
-    def __init__(self, *args, param=None, splits=None, categorical_ind=None, **kwargs):
+    def __init__(self, *args, param=None, splits=None, categorical_information=None, **kwargs):
 
         super().__init__(*args, **kwargs)
         self.param=param
         self.splits = splits
-        self.categorical_ind = categorical_ind
+        self.categorical_ind = categorical_information
 
         if self.param['objective'] == 'binary:logistic':
             self.threshold_predictions = True
@@ -276,12 +276,16 @@ class XGBoostWorker(Worker):
 
 class TabNetWorker(Worker):
 
-    def __init__(self, *args, param=None, splits=None, categorical_ind=None, **kwargs):
+    def __init__(self, *args, param=None, splits=None, categorical_information=None, **kwargs):
 
         super().__init__(*args, **kwargs)
         self.param=param
         self.splits = splits
-        self.categorical_ind = categorical_ind
+        if categorical_information is not None:
+            self.categorical_ind = categorical_information['categorical_ind']
+            self.categorical_columns = categorical_information['categorical_columns']
+            self.categorical_dimensions = categorical_information['categorical_dimensions']
+
 
 
     def compute(self, config, budget, **kwargs):
@@ -305,19 +309,6 @@ class TabNetWorker(Worker):
         y_val = self.splits['y_val']
         y_test = self.splits['y_test']
 
-        categorical_columns = []
-        categorical_dimensions = []
-
-        for index, categorical_column in enumerate(self.categorical_ind):
-            if categorical_column:
-                column_unique_values = len(set(X_train[:,index]))
-                column_max_index = int(max(X_train[:,index]))
-                # categorical columns with only one unique value
-                # do not need an embedding.
-                if column_unique_values == 1:
-                    continue
-                categorical_columns.append(index)
-                categorical_dimensions.append(column_max_index + 1)
 
 
         clf = TabNetClassifier(
@@ -327,8 +318,8 @@ class TabNetWorker(Worker):
             gamma=config['gamma'],
             lambda_sparse=config['lambda_sparse'],
             momentum=config['mb'],
-            cat_idxs=categorical_columns,
-            cat_dims=categorical_dimensions,
+            cat_idxs=self.categorical_columns,
+            cat_dims=self.categorical_dimensions,
             seed=self.param['seed'],
             optimizer_params={
                 'lr': config['learning_rate'],
@@ -422,8 +413,8 @@ class TabNetWorker(Worker):
             gamma=config['gamma'],
             lambda_sparse=config['lambda_sparse'],
             momentum=config['mb'],
-            cat_idxs=categorical_columns,
-            cat_dims=categorical_dimensions,
+            cat_idxs=self.categorical_columns,
+            cat_dims=self.categorical_dimensions,
             seed=self.param['seed'],
             optimizer_params={
                 'lr': config['learning_rate'],

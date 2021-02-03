@@ -14,10 +14,7 @@ from hpbandster.optimizers import RandomSearch as RS
 import numpy as np
 import openml
 
-from loader import Loader
-from utilities import \
-    check_leak_status, \
-    check_split_stratification
+from data.loader import Loader
 
 from worker import XGBoostWorker, TabNetWorker
 
@@ -140,7 +137,7 @@ if args.worker:
         host=host,
         param=param,
         splits=loader.get_splits(),
-        categorical_ind=loader.categorical_ind,
+        categorical_information=loader.categorical_information,
     )
     while True:
         try:
@@ -174,7 +171,7 @@ worker = model_worker(
     host=host,
     param=param,
     splits=loader.get_splits(),
-    categorical_ind=loader.categorical_ind,
+    categorical_information=loader.categorical_information,
     nameserver=ns_host,
     nameserver_port=ns_port
 )
@@ -228,7 +225,7 @@ worker = model_worker(
     args.run_id,
     param=param,
     splits=loader.get_splits(),
-    categorical_ind=loader.categorical_ind,
+    categorical_information=loader.categorical_information,
     nameserver='127.0.0.1',
 )
 refit_result = worker.refit(best_config)

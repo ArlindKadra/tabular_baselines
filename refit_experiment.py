@@ -9,7 +9,7 @@ import hpbandster.core.result as hpres
 import numpy as np
 import openml
 
-from loader import Loader
+from data.loader import Loader
 from worker import XGBoostWorker, TabNetWorker
 
 

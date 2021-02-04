@@ -89,22 +89,22 @@ def get_dataset_split(dataset, val_fraction=0.2, test_fraction=0.2, seed=11):
         categorical_columns = []
         categorical_dimensions = []
 
-        for index, categorical_column in enumerate(categorical_indicator):
-            if categorical_column:
-                column_unique_values = len(set(X[:, index]))
-                column_max_index = int(max(X[:, index]))
-                # categorical columns with only one unique value
-                # do not need an embedding.
-                if column_unique_values == 1:
-                    continue
-                categorical_columns.append(index)
-                categorical_dimensions.append(column_max_index + 1)
+    for index, categorical_column in enumerate(categorical_indicator):
+        if categorical_column:
+            column_unique_values = len(set(X[:, index]))
+            column_max_index = int(max(X[:, index]))
+            # categorical columns with only one unique value
+            # do not need an embedding.
+            if column_unique_values == 1:
+                continue
+            categorical_columns.append(index)
+            categorical_dimensions.append(column_max_index + 1)
 
-        categorical_information = {
-            'categorical_ind': categorical_indicator,
-            'categorical_columns': categorical_columns,
-            'categorical_dimensions': categorical_dimensions,
-        }
+    categorical_information = {
+        'categorical_ind': categorical_indicator,
+        'categorical_columns': categorical_columns,
+        'categorical_dimensions': categorical_dimensions,
+    }
 
     return categorical_information, dataset_splits
 

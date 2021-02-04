@@ -91,7 +91,7 @@ worker = model_worker(
     args.run_id,
     param=param,
     splits=loader.get_splits(),
-    categorical_ind=loader.categorical_information,
+    categorical_information=loader.categorical_information,
     nameserver='127.0.0.1',
 )
 

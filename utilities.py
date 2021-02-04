@@ -86,8 +86,8 @@ def get_dataset_split(dataset, val_fraction=0.2, test_fraction=0.2, seed=11):
         dataset_splits['y_train'] = y_train
         dataset_splits['y_val'] = y_val
 
-        categorical_columns = []
-        categorical_dimensions = []
+    categorical_columns = []
+    categorical_dimensions = []
 
     for index, categorical_column in enumerate(categorical_indicator):
         if categorical_column:

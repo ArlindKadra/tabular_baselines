@@ -6,13 +6,13 @@ from utilities import get_dataset_openml, get_dataset_split
 
 
 # Loader class which provides the data splits
-class Loader():
+class Loader:
 
     def __init__(
             self,
             task_id: int,
-            val_fraction: int = 0.2,
-            test_fraction: int = 0.2,
+            val_fraction: float = 0.2,
+            test_fraction: float = 0.2,
             seed: int = 11,
     ):
 
@@ -28,11 +28,13 @@ class Loader():
         )
         self.dataset_id = dataset.dataset_id
 
-
     def get_splits(self) -> Dict[str, np.array]:
+        """Return the dataset splits for the different sets.
+        """
 
         return self.splits
 
     def get_dataset_id(self) -> int:
-
+        """Return the dataset id.
+        """
         return self.dataset_id

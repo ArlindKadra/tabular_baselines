@@ -12,12 +12,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
 
-import pandas as pd
-import seaborn as sns
-from scipy.stats import wilcoxon
-import matplotlib.pyplot as plt
-sns.set(rc={'figure.figsize':(11.7, 8.27),"font.size": 31,"axes.titlesize": 31, "axes.labelsize": 31, "xtick.labelsize": 31, "ytick.labelsize": 31}, style="white")
-# openml split, not the one used for my experiments.
+
 """
 train_indices, test_indices = task.get_train_test_split_indices()
 X_train = X[train_indices]
@@ -136,7 +131,7 @@ def get_dataset_split(
 
 
 def get_dataset_openml(
-        task_id:int = 11,
+        task_id: int = 11,
 ) -> openml.datasets.OpenMLDataset:
     """Download a dataset from OpenML
 
@@ -229,7 +224,8 @@ def check_split_stratification(splits):
     assert X_train.shape[0] == y_train.shape[0]
     assert X_val.shape[0] == y_val.shape[0]
     assert X_test.shape[0] == y_test.shape[0]
-    
+
+
 def get_task_list(
     benchmark_task_file: str = 'path/to/tasks.txt',
 ) -> List[int]:
@@ -259,7 +255,7 @@ def get_task_list(
 def status_exp_tasks(
         working_directory: str,
         seed: int = 11,
-        model_name: int = 'xgboost',
+        model_name: str = 'xgboost',
 ):
     """Analyze the different tasks of the experiment.
 
@@ -276,8 +272,8 @@ def status_exp_tasks(
     model_name: int
         The name of the model that was used.
     """
-    not_finished=0
-    finished=0
+    not_finished = 0
+    finished = 0
     benchmark_task_file = 'benchmark_datasets.txt'
     benchmark_task_file_path = os.path.join(working_directory, benchmark_task_file)
     result_directory = os.path.join(working_directory, model_name)
@@ -287,7 +283,8 @@ def status_exp_tasks(
         print(task_result_directory)
         try:
             with open(os.path.join(task_result_directory, 'refit_result.json'), 'r') as file:
-                task_result = json.load(file)
+                # do nothing with the result for now
+                _ = json.load(file)
                 print(f'Task {task_id} finished.')
                 finished += 1
                 # TODO do something with the result
@@ -436,40 +433,61 @@ def read_cocktail_values(
     task_ids = get_task_list(benchmark_task_file_path)
 
     for task_id in task_ids:
-            task_result_path = os.path.join(
-                result_path,
-                f'{task_id}',
-                'refit_run',
-                f'{seed}',
-            )
+        task_result_path = os.path.join(
+            result_path,
+            f'{task_id}',
+            'refit_run',
+            f'{seed}',
+        )
 
-            if os.path.exists(task_result_path):
-                if not os.path.isdir(task_result_path):
-                    task_result_path = os.path.join(
-                        result_path,
-                        f'{task_id}',
-                    )
-            else:
+        if os.path.exists(task_result_path):
+            if not os.path.isdir(task_result_path):
                 task_result_path = os.path.join(
                     result_path,
                     f'{task_id}',
                 )
+        else:
+            task_result_path = os.path.join(
+                result_path,
+                f'{task_id}',
+            )
 
-            try:
-                with open(os.path.join(task_result_path, 'run_results.txt')) as f:
-                    test_results = json.load(f)
-                cocktail_results[task_id] = test_results['mean_test_bal_acc']
-            except FileNotFoundError:
-                cocktail_results[task_id] = None
+        try:
+            with open(os.path.join(task_result_path, 'run_results.txt')) as f:
+                test_results = json.load(f)
+            cocktail_results[task_id] = test_results['mean_test_bal_acc']
+        except FileNotFoundError:
+            cocktail_results[task_id] = None
 
     return cocktail_results
 
 
-def compare_models(xgboost_dir, cocktail_dir):
+def compare_models(
+        baseline_dir: str,
+        cocktail_dir: str,
+) -> pd.DataFrame:
+    """Prepares the results of the experiments with all methods.
 
-    xgboost_results = read_baseline_values(xgboost_dir, model_name='xgboost')
-    tabnet_results = read_baseline_values(xgboost_dir, model_name='tabnet')
-    cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
+    Goes through the results at the given directories and builds
+    a table with all the methods over the different tasks.
+
+    Parameters:
+    -----------
+    baseline_dir: str
+        The directory where the results are located for the baseline
+        methods.
+    cocktail_dir: str
+        The directory where the results are located for the regularization
+        cocktails.
+
+    Returns:
+    --------
+    comparison_table - pd.DataFrame
+        A DataFrame with the results for all methods over the different tasks.
+    """
+    xgboost_results = read_baseline_values(baseline_dir, model_name='xgboost')
+    tabnet_results = read_baseline_values(baseline_dir, model_name='tabnet')
+    cocktail_results = read_cocktail_values(cocktail_dir, baseline_dir)
     autosklearn_results = read_autosklearn_values(cocktail_dir)
 
     table_dict = {
@@ -523,35 +541,58 @@ def compare_models(xgboost_dir, cocktail_dir):
         table_dict['Cocktail'].append(cocktail_task_result)
         table_dict['AutoSklearn'].append(autosklearn_task_result)
 
-        comparison_table = pd.DataFrame.from_dict(table_dict)
+    comparison_table = pd.DataFrame.from_dict(table_dict)
     print(
         comparison_table.to_latex(
             index=False,
-            caption='The performances of the Regularization Cocktail and the state-of-the-art competitors over the different datasets.',
+            caption='The performances of the Regularization Cocktail '
+                    'and the state-of-the-art competitors '
+                    'over the different datasets.',
             label='app:cocktail_vs_benchmarks_table',
         )
     )
-    comparison_table.to_csv(os.path.join(xgboost_dir, 'table_comparison.csv'), index=False)
-
-
-
+    comparison_table.to_csv(os.path.join(baseline_dir, 'table_comparison.csv'), index=False)
     _, p_value = wilcoxon(cocktail_performances, xgboost_performances)
     print(f'Cocktail wins: {cocktail_wins}, ties: {cocktail_ties}, looses: {cocktail_losses} against XGBoost')
     print(f'P-value: {p_value}')
     _, p_value = wilcoxon(xgboost_performances, autosklearn_performances)
     print(f'Xgboost vs AutoSklearn, P-value: {p_value}')
-    print(f'AutoSklearn wins: {autosklearn_wins}, ties: {autosklearn_ties}, looses: {autosklearn_looses} against XGBoost')
+    print(f'AutoSklearn wins: {autosklearn_wins}, '
+          f'ties: {autosklearn_ties}, '
+          f'looses: {autosklearn_looses} against XGBoost')
 
     return comparison_table
 
 
 def build_cd_diagram(
-    xgboost_dir,
-    cocktail_dir,
-):
-    xgboost_results = read_baseline_values(xgboost_dir, model_name='xgboost')
-    tabnet_results = read_baseline_values(xgboost_dir, model_name='tabnet')
-    cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
+    baseline_dir: str,
+    cocktail_dir: str,
+) -> pd.DataFrame:
+    """Prepare the results for a critical difference diagram.
+
+    This function prepares all the results into a pandas dataframe
+    so that it can be used to create a critical difference diagram
+    of all the methods.
+
+    Parameters:
+    -----------
+    baseline_dir: str
+        The directory where the results are located for the baseline
+        methods.
+    cocktail_dir: str
+        The directory where the results are located for the regularization
+        cocktails.
+
+    Returns:
+    --------
+        result_df: pd.DataFrame
+            A table with the accuracies of all methods over the different tasks.
+            The results are prepared in such a way that a critical difference
+            diagram can be generated from the pandas dataframe.
+    """
+    xgboost_results = read_baseline_values(baseline_dir, model_name='xgboost')
+    tabnet_results = read_baseline_values(baseline_dir, model_name='tabnet')
+    cocktail_results = read_cocktail_values(cocktail_dir, baseline_dir)
     autosklearn_results = read_autosklearn_values(cocktail_dir)
 
     models = ['Regularization Cocktail', 'XGBoost', 'AutoSklearn-GB', 'TabNet']
@@ -573,7 +614,7 @@ def build_cd_diagram(
                     task_result = autosklearn_results[task_id]
                 else:
                     raise ValueError("Illegal model value")
-            except Exception:
+            except FileNotFoundError:
                 task_result = 0
                 print(f'No results for task: {task_id} for model: {model_name}')
 
@@ -582,111 +623,10 @@ def build_cd_diagram(
             table_results['Balanced Accuracy'].append(task_result)
 
     result_df = pd.DataFrame(data=table_results)
-    result_df.to_csv(os.path.join(xgboost_dir, f'cd_data.csv'), index=False)
+    result_df.to_csv(os.path.join(baseline_dir, f'cd_data.csv'), index=False)
 
+    return result_df
 
-xgboost_dir = os.path.expanduser(
-    os.path.join(
-        '~',
-        'Desktop',
-        'xgboost_results',
-    )
-)
-
-cocktail_dir = os.path.expanduser(
-    os.path.join(
-        '~',
-        'Desktop',
-        'PhD',
-        'Rezultate',
-        'RegularizationCocktail',
-        'NEMO',
-    )
-)
-benchmark_table = compare_models(xgboost_dir, cocktail_dir)
-#build_cd_diagram(xgboost_dir, cocktail_dir)
-
-def plot_models(
-    xgboost_dir,
-    cocktail_dir,
-):
-    cocktail_wins = 0
-    cocktail_draws = 0
-    cocktail_looses = 0
-    stat_reg_results = []
-    stat_baseline_results = []
-    comparison_train_accuracies = []
-    comparison_test_accuracies = []
-    task_nr_features = []
-    task_nr_examples = []
-
-    #xgboost_results = read_xgboost_values(xgboost_dir, model_name='xgboost')
-    benchmark_results = read_baseline_values(xgboost_dir, model_name='tabnet')
-    cocktail_results = read_cocktail_values(cocktail_dir, xgboost_dir)
-    task_ids = benchmark_results.keys()
-
-    with open(os.path.join(cocktail_dir, 'task_metadata.json'), 'r') as file:
-        task_metadata = json.load(file)
-
-    for task_id in task_ids:
-
-        benchmark_task_result = benchmark_results[task_id]
-        cocktail_task_result = cocktail_results[task_id]
-        if benchmark_task_result is None:
-            continue
-
-        stat_reg_results.append(cocktail_task_result)
-        stat_baseline_results.append(benchmark_task_result)
-        if cocktail_task_result > benchmark_task_result:
-            cocktail_wins +=1
-        elif cocktail_task_result == benchmark_task_result:
-            cocktail_draws += 1
-        else:
-            cocktail_looses +=1
-        cocktail_task_result_error = 1 - cocktail_task_result
-        benchmark_task_result_error = 1 - benchmark_task_result
-        comparison_test_accuracies.append(benchmark_task_result_error / cocktail_task_result_error)
-        task_nr_examples.append(task_metadata[f'{task_id}'][0])
-        task_nr_features.append(task_metadata[f'{task_id}'][1])
-
-
-    plt.scatter(task_nr_examples, comparison_test_accuracies, s=100, c='#273E47', label='Test accuracy')
-    plt.axhline(y=1, color='r', linestyle='-', linewidth=3)
-    plt.xscale('log')
-    plt.xlabel("Number of data points")
-    plt.ylabel("Gain")
-    plt.ylim((0, 6))
-    plt.tick_params(
-        axis='x',  # changes apply to the x-axis
-        which='both',  # both major and minor ticks are affected
-        top=False,
-        bottom=True,
-        # ticks along the top edge are off
-    )
-    plt.tick_params(
-        axis='y',
-        which='both',
-        left=True,
-        right=False,
-    )
-
-    _, p_value = wilcoxon(stat_reg_results, stat_baseline_results)
-    print(f'P Value: {p_value:.5f}')
-    print(f'Cocktail Win'
-          f''
-          f's: {cocktail_wins}, Draws:{cocktail_draws}, Loses: {cocktail_looses}')
-    plt.title('TabNet')
-    #plt.title(f'Wins: {cocktail_wins}, '
-    #          f'Losses: {cocktail_looses}, '
-    #          f'Draws: {cocktail_draws} \n p-value: {p_value:.4f}')
-    plt.savefig(
-        'cocktail_improvement_tabnet_examples.pdf',
-        bbox_inches='tight',
-        pad_inches=0.15,
-        margins=0.1,
-    )
-
-# plot_models(xgboost_dir, cocktail_dir)
 
 def generate_ranks_data(
     all_data: pd.DataFrame,
@@ -695,15 +635,18 @@ def generate_ranks_data(
     Parameters
     ----------
     all_data: pd.DataFrame
-        A dataframe where each row consists of a
-        tasks values across networks with different
-        regularization techniques.
+        A dataframe where each row consists of
+        tasks values across different models.
+
+    Returns
+    -------
+    ranks_df: pd.DataFrame
+        A dataframe of the ranks of all methods over
+        the different tasks.
     """
     all_ranked_data = []
     all_data.drop(columns=['Task Id'], inplace=True)
     column_names = all_data.columns
-
-
 
     for row in all_data.itertuples(index=False):
         task_regularization_data = list(row)
@@ -720,55 +663,3 @@ def generate_ranks_data(
     ranks_df = pd.DataFrame(all_ranked_data, columns=column_names)
 
     return ranks_df
-
-
-def patch_violinplot():
-    """Patch seaborn's violinplot in current axis to workaround matplotlib's bug ##5423."""
-    from matplotlib.collections import PolyCollection
-    ax = plt.gca()
-    for art in ax.get_children():
-        if isinstance(art, PolyCollection):
-            art.set_edgecolor((0.3, 0.3, 0.3))
-
-def generate_ranks_comparison(
-    all_data: pd.DataFrame,
-):
-    """
-    Parameters
-    ----------
-    all_data: pd.DataFrame
-        A dataframe where each row consists of a
-        tasks values across networks with different
-        regularization techniques.
-    """
-    all_data_ranked = generate_ranks_data(all_data)
-    all_data = pd.melt(
-        all_data_ranked,
-        value_vars=all_data.columns,
-        var_name='Method',
-        value_name='Rank',
-    )
-
-    fig, _ = plt.subplots()
-    print(all_data)
-    sns.violinplot(x='Method', y='Rank', linewidth=3, data=all_data, cut=0, kind='violin')
-    patch_violinplot()
-    plt.title('Ranks of the baselines and the cocktail')
-    plt.xlabel("")
-    #plt.xticks(rotation=60)
-    plt.tick_params(
-        axis='x',  # changes apply to the x-axis
-        which='both',  # both major and minor ticks are affected
-        top=False,
-        bottom=True,
-        # ticks along the top edge are off
-    )
-    fig.autofmt_xdate()
-    plt.savefig(
-        'violin_ranks.pdf',
-        bbox_inches='tight',
-        pad_inches=0.15,
-        margins=0.1,
-    )
-
-generate_ranks_comparison(benchmark_table)

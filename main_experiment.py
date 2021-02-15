@@ -118,9 +118,6 @@ worker_choices = {
 model_worker = worker_choices[args.model]
 # build the model setting configuration
 if args.model == 'tabnet':
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    torch.manual_seed(args.seed)
     param = model_worker.get_parameters(
         seed=args.seed,
     )
@@ -188,8 +185,8 @@ optimizer_choices = {
 optimizer = optimizer_choices[args.optimizer]
 
 bohb = optimizer(
-    configspace = model_worker.get_default_configspace(seed=args.seed),
-    run_id = args.run_id,
+    configspace=model_worker.get_default_configspace(seed=args.seed),
+    run_id=args.run_id,
     host=host,
     nameserver=ns_host,
     nameserver_port=ns_port,
@@ -218,9 +215,12 @@ best_config = id2config[incumbent]['config']
 print('Best found configuration:', best_config)
 print('A total of %i unique configurations where sampled.' % len(id2config.keys()))
 print('A total of %i runs where executed.' % len(res.get_all_runs()))
-print('Total budget corresponds to %.1f full function evaluations.'%(sum([r.budget for r in all_runs])/args.max_budget))
-print('Total budget corresponds to %.1f full function evaluations.'%(sum([r.budget for r in all_runs])/args.max_budget))
-print('The run took  %.1f seconds to complete.'%(all_runs[-1].time_stamps['finished'] - all_runs[0].time_stamps['started']))
+print('Total budget corresponds to %.1f full function evaluations.'
+      % (sum([r.budget for r in all_runs])/args.max_budget))
+print('Total budget corresponds to %.1f full function evaluations.'
+      % (sum([r.budget for r in all_runs])/args.max_budget))
+print('The run took  %.1f seconds to complete.'
+      % (all_runs[-1].time_stamps['finished'] - all_runs[0].time_stamps['started']))
 
 loader = Loader(task_id=args.task_id, val_fraction=0)
 worker = model_worker(
@@ -234,4 +234,3 @@ refit_result = worker.refit(best_config)
 
 with open(os.path.join(run_directory, 'refit_result.json'), 'w') as file:
     json.dump(refit_result, file)
-

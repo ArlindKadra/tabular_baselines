@@ -1,6 +1,6 @@
 from copy import deepcopy
 from functools import partial
-from typing import Tuple
+from typing import Dict, Tuple, Union
 
 import ConfigSpace as CS
 from hpbandster.core.worker import Worker
@@ -209,7 +209,7 @@ class XGBoostWorker(Worker):
             CS.UniformIntegerHyperparameter(
                 'num_round',
                 lower=1,
-                upper=100,
+                upper=1000,
             )
         )
         config_space.add_hyperparameter(
@@ -273,6 +273,34 @@ class XGBoostWorker(Worker):
 
         return config_space
 
+    @staticmethod
+    def get_parameters(
+            nr_classes: int,
+            seed: int = 11,
+            nr_threads: int = 1
+    ) -> Dict[str, Union[int, str]]:
+
+        param = {
+            'disable_default_eval_metric': 1,
+            'seed': seed,
+            'nthread': nr_threads,
+        }
+        if nr_classes != 2:
+            param.update(
+                {
+                    'objective': 'multi:softmax',
+                    'num_class': nr_classes + 1,
+                }
+            )
+        else:
+            param.update(
+                {
+                    'objective': 'binary:logistic',
+
+                }
+            )
+
+        return param
 
 class TabNetWorker(Worker):
 
@@ -351,7 +379,8 @@ class TabNetWorker(Worker):
             raise ValueError('Illegal batch size given')
 
         clf.fit(
-            X_train=X_train, y_train=y_train,
+            X_train=X_train,
+            y_train=y_train,
             batch_size=batch_size,
             virtual_batch_size=vbatch_size,
             eval_set=[(X_val, y_val)],
@@ -632,3 +661,14 @@ class TabNetWorker(Worker):
         )
 
         return config_space
+
+    @staticmethod
+    def get_parameters(
+            seed: int = 11,
+    ) -> Dict[str, Union[int, str]]:
+
+        param = {
+            'seed': seed,
+        }
+
+        return param

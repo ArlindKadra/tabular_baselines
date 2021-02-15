@@ -1,9 +1,9 @@
 import argparse
-import pickle
 import json
 import logging
 logging.basicConfig(level=logging.DEBUG)
 import os
+import pickle
 import random
 import time
 
@@ -13,20 +13,20 @@ from hpbandster.optimizers import BOHB as BOHB
 from hpbandster.optimizers import RandomSearch as RS
 import numpy as np
 import openml
+import torch
 
 from data.loader import Loader
-
 from worker import XGBoostWorker, TabNetWorker
 
 
 parser = argparse.ArgumentParser(
-    description='XGBoost experiment.'
+    description='Baseline experiment.'
 )
 parser.add_argument(
     '--run_id',
     type=str,
     help='The run id of the optimization run.',
-    default='XGBoost',
+    default='tabular_baseline',
 )
 parser.add_argument(
     '--working_directory',
@@ -55,7 +55,7 @@ parser.add_argument(
 parser.add_argument(
     '--task_id',
     type=int,
-    help='Minimum budget used during the optimization.',
+    help='Task id used for the experiment.',
     default=233109,
 )
 parser.add_argument(
@@ -79,13 +79,19 @@ parser.add_argument(
 parser.add_argument(
     '--n_iterations',
     type=int,
-    help='Number of iterations.',
+    help='Number of BOHB iterations.',
     default=10,
 )
 parser.add_argument(
     '--n_workers',
     type=int,
     help='Number of workers to run in parallel.',
+    default=2,
+)
+parser.add_argument(
+    '--nr_threads',
+    type=int,
+    help='Number of threads for one worker.',
     default=2,
 )
 parser.add_argument(
@@ -102,27 +108,7 @@ random.seed(args.seed)
 host = hpns.nic_name_to_host(args.nic_name)
 loader = Loader(task_id=args.task_id)
 
-#
-# check_leak_status(loader.get_splits())
-# check_split_stratification(loader.get_splits())
-
 nr_classes = int(openml.datasets.get_dataset(loader.get_dataset_id()).qualities['NumberOfClasses'])
-
-if nr_classes != 2:
-    param = {
-        'objective': 'multi:softmax',
-        'num_class': nr_classes + 1,
-        'disable_default_eval_metric': 1,
-        'seed': args.seed,
-        'nthread': 2,
-    }
-else:
-    param = {
-        'objective': 'binary:logistic',
-        'disable_default_eval_metric': 1,
-        'seed': args.seed,
-        'nthread': 2,
-    }
 
 worker_choices = {
     'tabnet': TabNetWorker,
@@ -130,8 +116,24 @@ worker_choices = {
 }
 
 model_worker = worker_choices[args.model]
+# build the model setting configuration
+if args.model == 'tabnet':
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.manual_seed(args.seed)
+    param = model_worker.get_parameters(
+        seed=args.seed,
+    )
+else:
+    param = model_worker.get_parameters(
+        nr_classes=nr_classes,
+        seed=args.seed,
+        nr_threads=args.nr_threads,
+    )
+
 if args.worker:
-    time.sleep(5)  # short artificial delay to make sure the nameserver is already running
+    # short artificial delay to make sure the nameserver is already running
+    time.sleep(5)
     worker = model_worker(
         run_id=args.run_id,
         host=host,
@@ -162,7 +164,7 @@ NS = hpns.NameServer(
     run_id=args.run_id,
     host=host,
     port=0,
-    working_directory=args.working_directory,
+    working_directory=run_directory,
 )
 ns_host, ns_port = NS.start()
 
@@ -232,3 +234,4 @@ refit_result = worker.refit(best_config)
 
 with open(os.path.join(run_directory, 'refit_result.json'), 'w') as file:
     json.dump(refit_result, file)
+

@@ -269,6 +269,14 @@ class XGBoostWorker(Worker):
         )
         config_space.add_hyperparameter(
             cs.UniformFloatHyperparameter(
+                'rate_drop',
+                1e-10,
+                1-(1e-10),
+                default_value=0.5,
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformFloatHyperparameter(
                 'gamma',
                 lower=0.1,
                 upper=1,

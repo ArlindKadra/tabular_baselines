@@ -267,13 +267,21 @@ class XGBoostWorker(Worker):
                 upper=1000,
             )
         )
+        booster = cs.CategoricalHyperparameter(
+            'booster',
+            choices=['gbtree', 'dart'],
+        )
         config_space.add_hyperparameter(
-            cs.UniformFloatHyperparameter(
-                'rate_drop',
-                1e-10,
-                1-(1e-10),
-                default_value=0.5,
-            )
+            booster,
+        )
+        rate_drop = cs.UniformFloatHyperparameter(
+            'rate_drop',
+            1e-10,
+            1-(1e-10),
+            default_value=0.5,
+        )
+        config_space.add_hyperparameter(
+            rate_drop,
         )
         config_space.add_hyperparameter(
             cs.UniformFloatHyperparameter(
@@ -331,6 +339,14 @@ class XGBoostWorker(Worker):
                 'subsample',
                 lower=0.01,
                 upper=1,
+            )
+        )
+
+        config_space.add_condition(
+            cs.EqualsCondition(
+                rate_drop,
+                booster,
+                'dart',
             )
         )
 

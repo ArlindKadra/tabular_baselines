@@ -55,8 +55,8 @@ class XGBoostWorker(Worker):
     def __init__(self, *args, param=None, **kwargs):
 
         super().__init__(*args, **kwargs)
-        self.param = param
-        self.task_id = param['task_id']
+        self.param = deepcopy(param)
+        self.task_id = self.param['task_id']
         del self.param['task_id']
 
         if self.param['objective'] == 'binary:logistic':

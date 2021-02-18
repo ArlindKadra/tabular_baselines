@@ -14,7 +14,6 @@ from hpbandster.optimizers import RandomSearch as RS
 import numpy as np
 import openml
 
-from data.loader import Loader
 from worker import XGBoostWorker, TabNetWorker
 
 
@@ -105,9 +104,12 @@ np.random.seed(args.seed)
 random.seed(args.seed)
 
 host = hpns.nic_name_to_host(args.nic_name)
-loader = Loader(task_id=args.task_id)
 
-nr_classes = int(openml.datasets.get_dataset(loader.get_dataset_id()).qualities['NumberOfClasses'])
+# determine the problem type, if it is binary
+# or multiclass classification
+task_id = args.task_id
+task = openml.tasks.get_task(task_id, download_data=False)
+nr_classes = int(openml.datasets.get_dataset(task.dataset_id, download_data=False).qualities['NumberOfClasses'])
 
 worker_choices = {
     'tabnet': TabNetWorker,
@@ -118,10 +120,12 @@ model_worker = worker_choices[args.model]
 # build the model setting configuration
 if args.model == 'tabnet':
     param = model_worker.get_parameters(
+        task_id=task_id,
         seed=args.seed,
     )
 else:
     param = model_worker.get_parameters(
+        task_id=task_id,
         nr_classes=nr_classes,
         seed=args.seed,
         nr_threads=args.nr_threads,
@@ -134,8 +138,6 @@ if args.worker:
         run_id=args.run_id,
         host=host,
         param=param,
-        splits=loader.get_splits(),
-        categorical_information=loader.categorical_information,
     )
     while True:
         try:
@@ -168,8 +170,6 @@ worker = model_worker(
     run_id=args.run_id,
     host=host,
     param=param,
-    splits=loader.get_splits(),
-    categorical_information=loader.categorical_information,
     nameserver=ns_host,
     nameserver_port=ns_port
 )
@@ -207,10 +207,30 @@ with open(os.path.join(run_directory, 'results.pkl'), 'wb') as fh:
 
 id2config = res.get_id2config_mapping()
 incumbent = res.get_incumbent_id()
+incumbent_runs = res.get_runs_by_id(incumbent)
+best_config = id2config[incumbent]['config']
+
+# default values to find the config with the
+# best performance, so we can pull the best
+# iteration number.
+val_error_min = 100
+best_round = 0
+if 'early_stopping_rounds' in best_config:
+    for run in incumbent_runs:
+        print(run)
+        print(run.info)
+        if run.loss < val_error_min:
+            val_error_min = run.loss
+            if 'best_round' in run.info:
+                best_round = run.info['best_round']
+    # no need for the early stopping rounds anymore
+    del best_config['early_stopping_rounds']
+    # train only for the best performance achieved
+    # for the 'best_round' iteration
+    best_config['num_round'] = best_round
+
 
 all_runs = res.get_all_runs()
-
-best_config = id2config[incumbent]['config']
 print('Best found configuration:', best_config)
 print('A total of %i unique configurations where sampled.' % len(id2config.keys()))
 print('A total of %i runs where executed.' % len(res.get_all_runs()))
@@ -221,15 +241,11 @@ print('Total budget corresponds to %.1f full function evaluations.'
 print('The run took  %.1f seconds to complete.'
       % (all_runs[-1].time_stamps['finished'] - all_runs[0].time_stamps['started']))
 
-loader = Loader(task_id=args.task_id, val_fraction=0)
 worker = model_worker(
     args.run_id,
     param=param,
-    splits=loader.get_splits(),
-    categorical_information=loader.categorical_information,
     nameserver='127.0.0.1',
 )
 refit_result = worker.refit(best_config)
-
 with open(os.path.join(run_directory, 'refit_result.json'), 'w') as file:
     json.dump(refit_result, file)

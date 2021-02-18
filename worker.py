@@ -10,6 +10,8 @@ from sklearn.metrics import balanced_accuracy_score
 import torch
 import xgboost as xgb
 
+from data.loader import Loader
+
 
 def balanced_error(
     threshold_predictions: bool,
@@ -50,12 +52,12 @@ def balanced_error(
 
 class XGBoostWorker(Worker):
 
-    def __init__(self, *args, param=None, splits=None, categorical_information=None, **kwargs):
+    def __init__(self, *args, param=None, **kwargs):
 
         super().__init__(*args, **kwargs)
         self.param = param
-        self.splits = splits
-        self.categorical_ind = categorical_information
+        self.task_id = param['task_id']
+        del self.param['task_id']
 
         if self.param['objective'] == 'binary:logistic':
             self.threshold_predictions = True
@@ -84,14 +86,46 @@ class XGBoostWorker(Worker):
         """
         xgboost_config = deepcopy(self.param)
         xgboost_config.update(config)
-        num_rounds = xgboost_config['num_round']
-        del xgboost_config['num_round']
-        X_train = self.splits['X_train']
-        X_val = self.splits['X_val']
-        X_test = self.splits['X_test']
-        y_train = self.splits['y_train']
-        y_val = self.splits['y_val']
-        y_test = self.splits['y_test']
+
+        if 'num_round' in xgboost_config:
+            num_rounds = xgboost_config['num_round']
+            del xgboost_config['num_round']
+        else:
+            num_rounds = 4000
+
+        if xgboost_config['use_ohe'] == 'True':
+            use_ohe = True
+        else:
+            use_ohe = False
+
+        if xgboost_config['use_imputation'] == 'True':
+            use_imputation = True
+        else:
+            use_imputation = False
+
+        early_stopping_iterations = \
+            xgboost_config['early_stopping_rounds']
+
+        del xgboost_config['use_ohe']
+        del xgboost_config['use_imputation']
+        del xgboost_config['early_stopping_rounds']
+
+        loader = Loader(
+            task_id=self.task_id,
+            seed=xgboost_config['seed'],
+            apply_one_hot_encoding=use_ohe,
+            apply_imputation=use_imputation,
+        )
+        splits = loader.get_splits()
+
+        # not used at the moment
+        # categorical_information = loader.categorical_information
+        X_train = splits['X_train']
+        X_val = splits['X_val']
+        X_test = splits['X_test']
+        y_train = splits['y_train']
+        y_val = splits['y_val']
+        y_test = splits['y_test']
 
         d_train = xgb.DMatrix(X_train, label=y_train)
         d_val = xgb.DMatrix(X_val, label=y_val)
@@ -105,13 +139,35 @@ class XGBoostWorker(Worker):
             feval=partial(balanced_error, self.threshold_predictions),
             evals=[(d_train, 'd_train'), (d_val, 'd_val')],
             evals_result=eval_results,
+            early_stopping_rounds=early_stopping_iterations,
         )
+
         # TODO Do something with eval_results in the future
         # print(eval_results)
-        # make prediction
-        y_train_preds = gb_model.predict(d_train)
-        y_val_preds = gb_model.predict(d_val)
-        y_test_preds = gb_model.predict(d_test)
+
+        # Default value if early stopping is not activated
+        best_iteration = None
+
+        # early stopping activated and triggered
+        if hasattr(gb_model, 'best_score'):
+            y_train_preds = gb_model.predict(
+                d_train,
+                ntree_limit=gb_model.best_ntree_limit,
+            )
+            y_val_preds = gb_model.predict(
+                d_val,
+                ntree_limit=gb_model.best_ntree_limit,
+            )
+            y_test_preds = gb_model.predict(
+                d_test,
+                ntree_limit=gb_model.best_ntree_limit,
+            )
+            print(f'Best iteration for xgboost: {gb_model.best_iteration}')
+            best_iteration = gb_model.best_iteration
+        else:
+            y_train_preds = gb_model.predict(d_train)
+            y_val_preds = gb_model.predict(d_val)
+            y_test_preds = gb_model.predict(d_test)
 
         if self.threshold_predictions:
             y_train_preds = np.array(y_train_preds)
@@ -139,6 +195,7 @@ class XGBoostWorker(Worker):
             'train_accuracy': float(train_performance),
             'val_accuracy': float(val_performance),
             'test_accuracy': float(test_performance),
+            'best_round': best_iteration,
         }
 
         return ({
@@ -166,12 +223,38 @@ class XGBoostWorker(Worker):
         """
         xgboost_config = deepcopy(self.param)
         xgboost_config.update(config)
-        num_rounds = xgboost_config['num_round']
-        del xgboost_config['num_round']
-        X_train = self.splits['X_train']
-        X_test = self.splits['X_test']
-        y_train = self.splits['y_train']
-        y_test = self.splits['y_test']
+        if 'num_round' in xgboost_config:
+            num_rounds = xgboost_config['num_round']
+            del xgboost_config['num_round']
+        else:
+            num_rounds = 4000
+
+        if xgboost_config['use_ohe'] == 'True':
+            use_ohe = True
+        else:
+            use_ohe = False
+
+        if xgboost_config['use_imputation'] == 'True':
+            use_imputation = True
+        else:
+            use_imputation = False
+
+        del xgboost_config['use_ohe']
+        del xgboost_config['use_imputation']
+
+        loader = Loader(
+            task_id=self.task_id,
+            val_fraction=0,
+            seed=xgboost_config['seed'],
+            apply_one_hot_encoding=use_ohe,
+            apply_imputation=use_imputation,
+        )
+        splits = loader.get_splits()
+
+        X_train = splits['X_train']
+        X_test = splits['X_test']
+        y_train = splits['y_train']
+        y_test = splits['y_test']
 
         d_train = xgb.DMatrix(X_train, label=y_train)
         d_test = xgb.DMatrix(X_test, label=y_test)
@@ -185,6 +268,7 @@ class XGBoostWorker(Worker):
             evals=[(d_train, 'd_train'), (d_test, 'd_test')],
             evals_result=eval_results,
         )
+
         # TODO do something with eval_results
         # print(eval_results)
         # make prediction
@@ -260,6 +344,7 @@ class XGBoostWorker(Worker):
                 log=True,
             )
         )
+        """At the moment, 4000 and with early stopping
         config_space.add_hyperparameter(
             cs.UniformIntegerHyperparameter(
                 'num_round',
@@ -267,6 +352,7 @@ class XGBoostWorker(Worker):
                 upper=1000,
             )
         )
+        """
         booster = cs.CategoricalHyperparameter(
             'booster',
             choices=['gbtree', 'dart'],
@@ -341,6 +427,25 @@ class XGBoostWorker(Worker):
                 upper=1,
             )
         )
+        config_space.add_hyperparameter(
+            cs.CategoricalHyperparameter(
+                'use_ohe',
+                choices=['True', 'False'],
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.CategoricalHyperparameter(
+                'use_imputation',
+                choices=['True', 'False'],
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformIntegerHyperparameter(
+                'early_stopping_rounds',
+                lower=1,
+                upper=20,
+            )
+        )
 
         config_space.add_condition(
             cs.EqualsCondition(
@@ -356,7 +461,8 @@ class XGBoostWorker(Worker):
     def get_parameters(
             nr_classes: int,
             seed: int = 11,
-            nr_threads: int = 1
+            nr_threads: int = 1,
+            task_id: int = 233088,
     ) -> Dict[str, Union[int, str]]:
         """Get the parameters of the method.
 
@@ -374,6 +480,8 @@ class XGBoostWorker(Worker):
         nr_threads: int
             The number of parallel threads that will be used for
             the model.
+        task_id: int
+            The id of the task that is used for the experiment.
 
         Returns:
         --------
@@ -385,6 +493,7 @@ class XGBoostWorker(Worker):
             'disable_default_eval_metric': 1,
             'seed': seed,
             'nthread': nr_threads,
+            'task_id': task_id,
         }
         if nr_classes != 2:
             param.update(
@@ -812,6 +921,7 @@ class TabNetWorker(Worker):
     @staticmethod
     def get_parameters(
             seed: int = 11,
+            task_id: int = 233088,
     ) -> Dict[str, Union[int, str]]:
         """Get the parameters of the method.
 
@@ -823,6 +933,8 @@ class TabNetWorker(Worker):
         -----------
         seed: int
             The seed that will be used for the model.
+        task_id: int
+            The id of the task that will be used for the experiment.
 
         Returns:
         --------
@@ -831,6 +943,7 @@ class TabNetWorker(Worker):
             algorithm.
         """
         param = {
+            'task_id': task_id,
             'seed': seed,
         }
 

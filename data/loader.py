@@ -14,6 +14,8 @@ class Loader:
             val_fraction: float = 0.2,
             test_fraction: float = 0.2,
             seed: int = 11,
+            apply_one_hot_encoding: bool = False,
+            apply_imputation: bool = False,
     ):
 
         # download the dataset
@@ -25,6 +27,8 @@ class Loader:
             val_fraction=val_fraction,
             test_fraction=test_fraction,
             seed=seed,
+            apply_one_hot_encoding=apply_one_hot_encoding,
+            apply_imputation=apply_imputation,
         )
         self.dataset_id = dataset.dataset_id
 

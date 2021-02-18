@@ -23,10 +23,13 @@ y_test = y[test_indices]
 
 
 def get_dataset_split(
-        dataset: openml.datasets.OpenMLDataset,
-        val_fraction: float = 0.2,
-        test_fraction: float = 0.2,
-        seed: int = 11,
+    dataset: openml.datasets.OpenMLDataset,
+    val_fraction: float = 0.2,
+    test_fraction: float = 0.2,
+    seed: int = 11,
+    apply_one_hot_encoding: bool = False,
+    apply_imputation: bool = False,
+    model: str = 'xgboost',
 ) -> Tuple[Dict[str, Union[List, np.ndarray]], Dict[str, np.ndarray]]:
     """Split the dataset into training, test and possibly validation set.
 
@@ -43,6 +46,10 @@ def get_dataset_split(
         The fraction for the size of the test set from the whole dataset.
     seed: int
         The seed used for the splitting of the dataset.
+    apply_one_hot_encoding: bool
+        Apply one hot encodings to categorical features of the given dataset.
+    apply_imputation: bool
+        Substitute missing values from the given dataset.
 
     Returns:
     --------
@@ -55,8 +62,7 @@ def get_dataset_split(
         dataset_format='array',
         target=dataset.default_target_attribute,
     )
-    # TODO move the imputer and scaler into its own method in the future.
-    imputer = SimpleImputer(strategy='most_frequent')
+
     label_encoder = LabelEncoder()
 
     empty_features = []
@@ -66,13 +72,26 @@ def get_dataset_split(
         nan_verdict = np.all(nan_mask)
         if nan_verdict:
             empty_features.append(feature_index)
-    # remove feature indicators from categorical indicator since
-    # they will be deleted from simple imputer.
+    # remove feature indicators from categorical indicator
+    # that are null.
     for feature_index in sorted(empty_features, reverse=True):
         del categorical_indicator[feature_index]
 
-    X = imputer.fit_transform(X)
+    # delete empty feature columns.
+    # Normally this would be done by the simple imputer, but
+    # since now it is conditional, we do it ourselves.
+    X = np.delete(X, empty_features, 1)
+
+    # Impute missing feature values
+    if apply_imputation:
+        X = impute_missing_data(X)
+
+    # label encode the targets
     y = label_encoder.fit_transform(y)
+
+    # check if the data matrix is sparse
+    is_sparse = scipy.sparse.issparse(X)
+
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -80,11 +99,34 @@ def get_dataset_split(
         random_state=seed,
         stratify=y,
     )
-    # Center data only on not sparse matrices
-    center_data = not scipy.sparse.issparse(X_train)
-    scaler = StandardScaler(with_mean=center_data).fit(X_train)
-    scaler.transform(X_train)
-    scaler.transform(X_test)
+
+    # standardize data
+    X_train, X_test = standardize_data(
+        X_train,
+        X_test,
+        is_sparse,
+    )
+
+    categorical_columns = []
+    categorical_dimensions = []
+    if model == 'tabnet':
+        for index, categorical_column in enumerate(categorical_indicator):
+            if categorical_column:
+                column_unique_values = len(set(X[:, index]))
+                column_max_index = int(max(X[:, index]))
+                # categorical columns with only one unique value
+                # do not need an embedding.
+                if column_unique_values == 1:
+                    continue
+                categorical_columns.append(index)
+                categorical_dimensions.append(column_max_index + 1)
+
+    # one hot encode the data
+    if apply_one_hot_encoding:
+        X_train, X_test = ohe_the_data(
+            X_train,
+            X_test,
+        )
 
     dataset_splits = {
         'X_train': X_train,
@@ -107,20 +149,6 @@ def get_dataset_split(
         dataset_splits['y_train'] = y_train
         dataset_splits['y_val'] = y_val
 
-    categorical_columns = []
-    categorical_dimensions = []
-
-    for index, categorical_column in enumerate(categorical_indicator):
-        if categorical_column:
-            column_unique_values = len(set(X[:, index]))
-            column_max_index = int(max(X[:, index]))
-            # categorical columns with only one unique value
-            # do not need an embedding.
-            if column_unique_values == 1:
-                continue
-            categorical_columns.append(index)
-            categorical_dimensions.append(column_max_index + 1)
-
     categorical_information = {
         'categorical_ind': categorical_indicator,
         'categorical_columns': categorical_columns,
@@ -128,6 +156,92 @@ def get_dataset_split(
     }
 
     return categorical_information, dataset_splits
+
+
+def standardize_data(
+        X_train: np.ndarray,
+        X_test: np.ndarray,
+        is_sparse: bool
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Standardize the data.
+
+    Compute the mean and std from the train set and
+    standardize the data (train and test set).
+
+    Parameters:
+    -----------
+    X_train: np.ndarray
+        The dataset examples used for training the model.
+    X_test: np.ndarray
+        The dataset examples used for testing the model.
+
+    Returns:
+    --------
+    (X_train, X_test): tuple(np.ndarray, np.ndarray)
+        Corresponding sets after being standardized.
+    """
+    # Center data only on not sparse matrices
+    center_data = not is_sparse
+    scaler = StandardScaler(with_mean=center_data).fit(X_train)
+    X_train = scaler.transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    return X_train, X_test
+
+
+def impute_missing_data(
+        X: np.ndarray,
+) -> np.ndarray:
+    """Impute missing data from the given dataset.
+
+    Impute missing data from the given dataset by using
+    the most frequent values.
+
+    Parameters:
+    -----------
+    X: np.ndarray
+        The dataset examples used for the experiment.
+
+    Returns:
+    --------
+    _: np.ndarray
+        Data after imputation.
+    """
+    # Most frequent strategy for imputation, since
+    # there also categorical features in most datasets.
+    imputer = SimpleImputer(strategy='most_frequent')
+
+    return imputer.fit_transform(X)
+
+
+def ohe_the_data(
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """One hot encode the data.
+
+    One hot encode the categorical features of the
+    given dataset.
+
+    Parameters:
+    -----------
+    X_train: np.ndarray
+        The dataset examples used for training the model.
+    X_test: np.ndarray
+        The dataset examples used for testing the model.
+
+    Returns:
+    --------
+    (X_train, X_test): tuple(np.ndarray, np.ndarray)
+        Corresponding sets after being one hot encoded.
+    """
+    enc = OneHotEncoder(handle_unknown='ignore')
+    X = np.concatenate((X_train, X_test), axis=0)
+    enc.fit(X)
+    X_train = enc.transform(X_train)
+    X_test = enc.transform(X_test)
+
+    return X_train, X_test
 
 
 def get_dataset_openml(

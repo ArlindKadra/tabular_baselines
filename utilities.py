@@ -600,13 +600,13 @@ def compare_models(
         A DataFrame with the results for all methods over the different tasks.
     """
     xgboost_results = read_baseline_values(baseline_dir, model_name='xgboost')
-    tabnet_results = read_baseline_values(baseline_dir, model_name='tabnet')
+    #tabnet_results = read_baseline_values(baseline_dir, model_name='tabnet')
     cocktail_results = read_cocktail_values(cocktail_dir, baseline_dir)
     autosklearn_results = read_autosklearn_values(cocktail_dir)
 
     table_dict = {
         'Task Id': [],
-        'Tabnet': [],
+    #    'Tabnet': [],
         'XGBoost': [],
         'AutoSklearn': [],
         'Cocktail': [],
@@ -628,7 +628,7 @@ def compare_models(
         xgboost_task_result = xgboost_results[task_id]
         if xgboost_task_result is None:
             continue
-        tabnet_task_result = tabnet_results[task_id]
+        #tabnet_task_result = tabnet_results[task_id]
         cocktail_task_result = cocktail_results[task_id]
         autosklearn_task_result = autosklearn_results[task_id]
         cocktail_performances.append(cocktail_task_result)
@@ -647,10 +647,10 @@ def compare_models(
         else:
             autosklearn_ties += 1
         table_dict['Task Id'].append(task_id)
-        if tabnet_task_result is not None:
+        """if tabnet_task_result is not None:
             table_dict['Tabnet'].append(tabnet_task_result)
         else:
-            table_dict['Tabnet'].append(tabnet_task_result)
+            table_dict['Tabnet'].append(tabnet_task_result)"""
         table_dict['XGBoost'].append(xgboost_task_result)
         table_dict['Cocktail'].append(cocktail_task_result)
         table_dict['AutoSklearn'].append(autosklearn_task_result)
@@ -777,3 +777,28 @@ def generate_ranks_data(
     ranks_df = pd.DataFrame(all_ranked_data, columns=column_names)
 
     return ranks_df
+
+xgboost_dir = os.path.expanduser(
+    os.path.join(
+        '~',
+        'Desktop',
+        'xgboost_results',
+    )
+)
+
+
+cocktail_dir = os.path.expanduser(
+    os.path.join(
+        '~',
+        'Desktop',
+        'PhD',
+        'Rezultate',
+        'RegularizationCocktail',
+        'NEMO',
+    )
+)
+
+compare_models(
+    xgboost_dir,
+    cocktail_dir
+)

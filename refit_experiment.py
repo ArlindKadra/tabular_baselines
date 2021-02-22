@@ -69,10 +69,12 @@ model_worker = worker_choices[args.model]
 
 if args.model == 'tabnet':
     param = model_worker.get_parameters(
+        task_id=args.task_id,
         seed=args.seed,
     )
 else:
     param = model_worker.get_parameters(
+        task_id=args.task_id,
         nr_classes=nr_classes,
         seed=args.seed,
         nr_threads=args.nr_threads,
@@ -89,8 +91,6 @@ os.makedirs(run_directory, exist_ok=True)
 worker = model_worker(
     args.run_id,
     param=param,
-    splits=loader.get_splits(),
-    categorical_information=loader.categorical_information,
     nameserver='127.0.0.1',
 )
 
@@ -102,6 +102,27 @@ inc_id = result.get_incumbent_id()
 inc_runs = result.get_runs_by_id(inc_id)
 inc_config = id2conf[inc_id]['config']
 print(f"Best Configuration So far {inc_config}")
+
+# default values to find the config with the
+# best performance, so we can pull the best
+# iteration number.
+val_error_min = 100
+best_round = 0
+if 'early_stopping_rounds' in inc_config:
+    for run in inc_runs:
+        print(run)
+        print(run.info)
+        if run.loss < val_error_min:
+            val_error_min = run.loss
+            if 'best_round' in run.info:
+                best_round = run.info['best_round']
+    # no need for the early stopping rounds anymore
+    del inc_config['early_stopping_rounds']
+    # train only for the best performance achieved
+    # for the 'best_round' iteration
+    inc_config['num_round'] = best_round
+    print(f'Best round for xgboost refit: {best_round}')
+
 refit_result = worker.refit(inc_config)
 with open(os.path.join(run_directory, 'refit_result.json'), 'w') as file:
     json.dump(refit_result, file)

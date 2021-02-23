@@ -519,18 +519,14 @@ class TabNetWorker(Worker):
             self,
             *args,
             param: dict,
-            splits: dict,
-            categorical_information: dict,
-            **kwargs
+            **kwargs,
     ):
 
         super().__init__(*args, **kwargs)
-        self.param = param
-        self.splits = splits
-        if categorical_information is not None:
-            self.categorical_ind = categorical_information['categorical_ind']
-            self.categorical_columns = categorical_information['categorical_columns']
-            self.categorical_dimensions = categorical_information['categorical_dimensions']
+        self.param = deepcopy(param)
+        self.task_id = self.param['task_id']
+        del self.param['task_id']
+
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         torch.manual_seed(self.param['seed'])
@@ -556,12 +552,28 @@ class TabNetWorker(Worker):
                 'loss' (scalar)
                 'info' (dict)
         """
-        X_train = self.splits['X_train']
-        X_val = self.splits['X_val']
-        X_test = self.splits['X_test']
-        y_train = self.splits['y_train']
-        y_val = self.splits['y_val']
-        y_test = self.splits['y_test']
+        # Always activate imputation for TabNet.
+        # No encoding needed, TabNet makes it's own embeddings.
+        loader = Loader(
+            task_id=self.task_id,
+            seed=self.param['seed'],
+            apply_one_hot_encoding=False,
+            apply_imputation=True,
+        )
+        splits = loader.get_splits()
+
+        X_train = splits['X_train']
+        X_val = splits['X_val']
+        X_test = splits['X_test']
+        y_train = splits['y_train']
+        y_val = splits['y_val']
+        y_test = splits['y_test']
+
+        categorical_information = loader.categorical_information
+        assert categorical_information is not None
+        _ = categorical_information['categorical_ind']
+        categorical_columns = categorical_information['categorical_columns']
+        categorical_dimensions = categorical_information['categorical_dimensions']
 
         clf = TabNetClassifier(
             n_a=config['na'],
@@ -570,8 +582,8 @@ class TabNetWorker(Worker):
             gamma=config['gamma'],
             lambda_sparse=config['lambda_sparse'],
             momentum=config['mb'],
-            cat_idxs=self.categorical_columns,
-            cat_dims=self.categorical_dimensions,
+            cat_idxs=categorical_columns,
+            cat_dims=categorical_dimensions,
             seed=self.param['seed'],
             optimizer_params={
                 'lr': config['learning_rate'],
@@ -656,24 +668,27 @@ class TabNetWorker(Worker):
             res: dict
                 Dictionary with the train and test accuracy.
         """
-        X_train = self.splits['X_train']
-        X_test = self.splits['X_test']
-        y_train = self.splits['y_train']
-        y_test = self.splits['y_test']
+        # Always activate imputation for TabNet.
+        # No encoding needed, TabNet makes it's own embeddings.
+        loader = Loader(
+            task_id=self.task_id,
+            val_fraction=0,
+            seed=self.param['seed'],
+            apply_one_hot_encoding=False,
+            apply_imputation=True,
+        )
 
-        categorical_columns = []
-        categorical_dimensions = []
+        splits = loader.get_splits()
+        categorical_information = loader.categorical_information
+        assert categorical_information is not None
+        _ = categorical_information['categorical_ind']
+        categorical_columns = categorical_information['categorical_columns']
+        categorical_dimensions = categorical_information['categorical_dimensions']
 
-        for index, categorical_column in enumerate(self.categorical_ind):
-            if categorical_column:
-                column_unique_values = len(set(X_train[:, index]))
-                column_max_index = int(max(X_train[:, index]))
-                # categorical columns with only one unique value
-                # do not need an embedding.
-                if column_unique_values == 1:
-                    continue
-                categorical_columns.append(index)
-                categorical_dimensions.append(column_max_index + 1)
+        X_train = splits['X_train']
+        X_test = splits['X_test']
+        y_train = splits['y_train']
+        y_test = splits['y_test']
 
         clf = TabNetClassifier(
             n_a=config['na'],
@@ -682,8 +697,8 @@ class TabNetWorker(Worker):
             gamma=config['gamma'],
             lambda_sparse=config['lambda_sparse'],
             momentum=config['mb'],
-            cat_idxs=self.categorical_columns,
-            cat_dims=self.categorical_dimensions,
+            cat_idxs=categorical_columns,
+            cat_dims=categorical_dimensions,
             seed=self.param['seed'],
             optimizer_params={
                 'lr': config['learning_rate'],

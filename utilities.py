@@ -599,7 +599,7 @@ def compare_models(
     comparison_table - pd.DataFrame
         A DataFrame with the results for all methods over the different tasks.
     """
-    xgboost_results = read_baseline_values(baseline_dir, model_name='xgboost')
+    xgboost_results = read_baseline_values(baseline_dir, model_name='tabnet')
     #tabnet_results = read_baseline_values(baseline_dir, model_name='tabnet')
     cocktail_results = read_cocktail_values(cocktail_dir, baseline_dir)
     autosklearn_results = read_autosklearn_values(cocktail_dir)

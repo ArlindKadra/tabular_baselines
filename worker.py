@@ -1,5 +1,6 @@
 from copy import deepcopy
 from functools import partial
+import os
 from typing import Dict, Tuple, Union
 
 import ConfigSpace as cs
@@ -530,6 +531,7 @@ class TabNetWorker(Worker):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         torch.manual_seed(self.param['seed'])
+        os.environ['OMP_NUM_THREADS'] = '1'
 
     def compute(self, config: dict, budget: float, **kwargs) -> Dict:
         """What should be computed for one TabNet worker.
@@ -575,6 +577,9 @@ class TabNetWorker(Worker):
         categorical_columns = categorical_information['categorical_columns']
         categorical_dimensions = categorical_information['categorical_dimensions']
 
+        # Default value if early stopping is not activated
+        best_iteration = None
+
         clf = TabNetClassifier(
             n_a=config['na'],
             n_d=config['na'],
@@ -614,6 +619,8 @@ class TabNetWorker(Worker):
         else:
             raise ValueError('Illegal batch size given')
 
+        early_stopping_activated = True if 'early_stopping_rounds' in config else False
+
         clf.fit(
             X_train=X_train,
             y_train=y_train,
@@ -623,8 +630,11 @@ class TabNetWorker(Worker):
             eval_name=['Validation'],
             eval_metric=['balanced_accuracy'],
             max_epochs=200,
-            patience=0,
+            patience=config['early_stopping_rounds'] if early_stopping_activated else 0,
         )
+
+        if early_stopping_activated:
+            best_iteration = clf.best_epoch
 
         y_train_preds = clf.predict(X_train)
         y_val_preds = clf.predict(X_val)
@@ -643,6 +653,7 @@ class TabNetWorker(Worker):
             'train_accuracy': float(train_performance),
             'val_accuracy': float(val_performance),
             'test_accuracy': float(test_performance),
+            'best_round': best_iteration,
         }
 
         return ({
@@ -668,8 +679,14 @@ class TabNetWorker(Worker):
             res: dict
                 Dictionary with the train and test accuracy.
         """
+        # early stopping was activated in this experiment
+        if 'max_epochs' in config:
+            max_epochs = config['max_epochs']
+        else:
+            max_epochs = 200
+
         # Always activate imputation for TabNet.
-        # No encoding needed, TabNet makes it's own embeddings.
+        # No encoding needed, TabNet makes it's own embeddings
         loader = Loader(
             task_id=self.task_id,
             val_fraction=0,
@@ -734,7 +751,8 @@ class TabNetWorker(Worker):
             batch_size=batch_size,
             virtual_batch_size=vbatch_size,
             eval_metric=['balanced_accuracy'],
-            max_epochs=200,
+            max_epochs=max_epochs,
+            patience=0,
         )
 
         y_train_preds = clf.predict(X_train)
@@ -865,6 +883,13 @@ class TabNetWorker(Worker):
             cs.CategoricalHyperparameter(
                 'decay_iterations',
                 choices=[500, 2000, 8000, 10000, 20000],
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformIntegerHyperparameter(
+                'early_stopping_rounds',
+                lower=1,
+                upper=20,
             )
         )
         config_space.add_hyperparameter(

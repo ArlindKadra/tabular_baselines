@@ -502,7 +502,8 @@ def read_autosklearn_values(
 def read_cocktail_values(
         cocktail_result_dir: str,
         benchmark_task_file_dir: str,
-        seed: int = 11
+        seed: int = 11,
+        cocktail_version: str = 'cocktail',
 ) -> Dict[int, float]:
     """Prepares the results of the experiment with the regularization
     cocktail.
@@ -534,7 +535,7 @@ def read_cocktail_values(
 
     result_path = os.path.join(
         cocktail_result_dir,
-        'cocktail',
+        cocktail_version,
         '512',
     )
 
@@ -599,14 +600,14 @@ def compare_models(
     comparison_table - pd.DataFrame
         A DataFrame with the results for all methods over the different tasks.
     """
-    xgboost_results = read_baseline_values(baseline_dir, model_name='tabnet')
-    #tabnet_results = read_baseline_values(baseline_dir, model_name='tabnet')
-    cocktail_results = read_cocktail_values(cocktail_dir, baseline_dir)
+    xgboost_results = read_baseline_values(baseline_dir, model_name='xgboost')
+    tabnet_results = read_baseline_values(baseline_dir, model_name='tabnet')
+    cocktail_results = read_cocktail_values(cocktail_dir, baseline_dir, cocktail_version='plain_network')
     autosklearn_results = read_autosklearn_values(cocktail_dir)
 
     table_dict = {
         'Task Id': [],
-    #    'Tabnet': [],
+        'Tabnet': [],
         'XGBoost': [],
         'AutoSklearn': [],
         'Cocktail': [],
@@ -628,7 +629,7 @@ def compare_models(
         xgboost_task_result = xgboost_results[task_id]
         if xgboost_task_result is None:
             continue
-        #tabnet_task_result = tabnet_results[task_id]
+        tabnet_task_result = tabnet_results[task_id]
         cocktail_task_result = cocktail_results[task_id]
         autosklearn_task_result = autosklearn_results[task_id]
         cocktail_performances.append(cocktail_task_result)
@@ -647,10 +648,10 @@ def compare_models(
         else:
             autosklearn_ties += 1
         table_dict['Task Id'].append(task_id)
-        """if tabnet_task_result is not None:
+        if tabnet_task_result is not None:
             table_dict['Tabnet'].append(tabnet_task_result)
         else:
-            table_dict['Tabnet'].append(tabnet_task_result)"""
+            table_dict['Tabnet'].append(tabnet_task_result)
         table_dict['XGBoost'].append(xgboost_task_result)
         table_dict['Cocktail'].append(cocktail_task_result)
         table_dict['AutoSklearn'].append(autosklearn_task_result)
@@ -778,6 +779,96 @@ def generate_ranks_data(
 
     return ranks_df
 
+
+def compare_cocktail_versions(
+    cocktail_result_folder: str,
+    benchmark_file_path: str
+) -> pd.DataFrame:
+    """Prepares the results of the experiments with the different
+    cocktail versions.
+
+    Goes through the results at the given directories and builds
+    a table with the different cocktail versions over the different
+    tasks.
+
+    Parameters:
+    -----------
+    cocktail_result_folder: str
+        The folder directory where the results are located for the
+        regularization cocktails.
+    benchmark_file_path: str
+        The directory where the benchmark task file is located.
+        The file contains all the task ids. The file name is
+        not needed to be given.
+
+    Returns:
+    --------
+    comparison_table - pd.DataFrame
+        A DataFrame with the results for all methods over the different tasks.
+    """
+    fixed_cocktail_results = read_cocktail_values(
+        cocktail_dir,
+        benchmark_file_path,
+        cocktail_version='cocktail',
+    )
+    dynamic_cocktail_results = read_cocktail_values(
+        cocktail_dir,
+        benchmark_file_path,
+        cocktail_version='cocktail_lr',
+    )
+
+    table_dict = {
+        'Task Id': [],
+        'Fixed Lr Cocktail': [],
+        'Dynamic Lr Cocktail': [],
+    }
+
+    cocktail_fixed_wins = 0
+    cocktail_fixed_losses = 0
+    cocktail_fixed_ties = 0
+    fixed_cocktail_performances = []
+    dynamic_cocktail_performances = []
+
+    for task_id in fixed_cocktail_results:
+
+        fixed_cocktail_task_result = fixed_cocktail_results[task_id]
+        dynamic_cocktail_task_result = dynamic_cocktail_results[task_id]
+
+        fixed_cocktail_performances.append(fixed_cocktail_task_result)
+        dynamic_cocktail_performances.append(dynamic_cocktail_task_result)
+
+        if fixed_cocktail_task_result > dynamic_cocktail_task_result:
+            cocktail_fixed_wins += 1
+        elif fixed_cocktail_task_result < dynamic_cocktail_task_result:
+            cocktail_fixed_losses += 1
+        else:
+            cocktail_fixed_ties += 1
+
+        table_dict['Task Id'].append(task_id)
+        table_dict['Fixed Lr Cocktail'].append(f'{fixed_cocktail_task_result * 100:.3f}')
+        table_dict['Dynamic Lr Cocktail'].append(f'{dynamic_cocktail_task_result * 100:.3f}')
+
+
+    comparison_table = pd.DataFrame.from_dict(table_dict)
+    print(
+        comparison_table.to_latex(
+            index=False,
+            caption='The performances of the Regularization Cocktail '
+                    'and the state-of-the-art competitors '
+                    'over the different datasets.',
+            label='app:cocktail_vs_benchmarks_table',
+        )
+    )
+
+    _, p_value = wilcoxon(fixed_cocktail_performances, dynamic_cocktail_performances)
+    print(f'Fixed Lr Cocktail wins: {cocktail_fixed_wins}, '
+          f'ties: {cocktail_fixed_ties}, '
+          f'looses: {cocktail_fixed_losses} against Dynamic Lr Cocktail')
+    print(f'P-value: {p_value}')
+
+    return comparison_table
+
+
 xgboost_dir = os.path.expanduser(
     os.path.join(
         '~',
@@ -797,8 +888,12 @@ cocktail_dir = os.path.expanduser(
         'NEMO',
     )
 )
-
+"""
 compare_models(
     xgboost_dir,
     cocktail_dir
 )
+compare_cocktail_versions(
+    cocktail_dir,
+    xgboost_dir,
+)"""

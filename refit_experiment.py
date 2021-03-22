@@ -57,8 +57,9 @@ args = parser.parse_args()
 np.random.seed(args.seed)
 random.seed(args.seed)
 
-loader = Loader(task_id=args.task_id, val_fraction=0)
-nr_classes = int(openml.datasets.get_dataset(loader.get_dataset_id()).qualities['NumberOfClasses'])
+task_id = args.task_id
+task = openml.tasks.get_task(task_id, download_data=False)
+nr_classes = int(openml.datasets.get_dataset(task.dataset_id, download_data=False).qualities['NumberOfClasses'])
 
 worker_choices = {
     'tabnet': TabNetWorker,
@@ -120,8 +121,12 @@ if 'early_stopping_rounds' in inc_config:
     del inc_config['early_stopping_rounds']
     # train only for the best performance achieved
     # for the 'best_round' iteration
-    inc_config['num_round'] = best_round
-    print(f'Best round for xgboost refit: {best_round}')
+    if args.model == 'tabnet':
+        inc_config['max_epochs'] = best_round
+    else:
+        inc_config['num_round'] = best_round
+
+    print(f'Best round for {args.model} refit: {best_round}')
 
 refit_result = worker.refit(inc_config)
 with open(os.path.join(run_directory, 'refit_result.json'), 'w') as file:

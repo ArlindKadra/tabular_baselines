@@ -227,8 +227,12 @@ if 'early_stopping_rounds' in best_config:
     del best_config['early_stopping_rounds']
     # train only for the best performance achieved
     # for the 'best_round' iteration
-    best_config['num_round'] = best_round
-    print(f'Best round for xgboost refit: {best_round}')
+    if args.model == 'tabnet':
+        best_config['max_epochs'] = best_round
+    else:
+        best_config['num_round'] = best_round
+
+    print(f'Best round for {args.model} refit: {best_round}')
 
 
 all_runs = res.get_all_runs()

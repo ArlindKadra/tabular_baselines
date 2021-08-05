@@ -209,7 +209,7 @@ def impute_missing_data(
     """
     # Most frequent strategy for imputation, since
     # there also categorical features in most datasets.
-    imputer = SimpleImputer(strategy='most_frequent')
+    imputer = SimpleImputer(strategy='constant')
 
     return imputer.fit_transform(X)
 

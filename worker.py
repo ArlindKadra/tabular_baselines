@@ -3,6 +3,7 @@ from functools import partial
 import os
 from typing import Dict, Tuple, Union
 
+from catboost import CatBoostClassifier, metrics
 import ConfigSpace as cs
 from hpbandster.core.worker import Worker
 import numpy as np
@@ -788,7 +789,7 @@ class TabNetWorker(Worker):
         Returns:
         --------
         config_space: cs.ConfigurationSpace
-            Configuration space for XGBoost.
+            Configuration space for TabNet.
         """
         config_space = cs.ConfigurationSpace(seed=seed)
         # learning rate
@@ -985,6 +986,323 @@ class TabNetWorker(Worker):
         param = {
             'task_id': task_id,
             'seed': seed,
+        }
+
+        return param
+
+
+class CatBoostWorker(Worker):
+
+    def __init__(
+        self,
+        *args,
+        param: dict,
+        **kwargs,
+    ):
+
+        super().__init__(*args, **kwargs)
+        self.param = deepcopy(param)
+        self.task_id = self.param['task_id']
+        self.seed = self.param['seed']
+        self.output_directory = self.param['output_directory']
+        del self.param['task_id']
+        del self.param['seed']
+        del self.param['output_directory']
+
+    def compute(self, config: dict, budget: float, **kwargs) -> Dict:
+        """What should be computed for one CatBoost worker.
+
+        The function takes a configuration and a budget, it
+        then uses the CatBoost algorithm to generate a loss
+        and other information.
+
+        Parameters:
+        -----------
+        config: dict
+            dictionary containing the sampled configurations by the optimizer
+        budget: float
+            amount of time/epochs/etc. the model can use to train
+
+        Returns:
+        --------
+        dict:
+            With the following mandatory arguments:
+            'loss' (scalar)
+            'info' (dict)
+        """
+        # budget at the moment is not used because we do
+        # not make use of multi-fidelity
+
+        # Always activate imputation for CatBoost.
+        # No encoding needed, CatBoost deals with it
+        # natively.
+        loader = Loader(
+            task_id=self.task_id,
+            seed=self.seed,
+            apply_one_hot_encoding=False,
+            apply_imputation=True,
+        )
+        splits = loader.get_splits()
+
+        X_train = splits['X_train']
+        X_val = splits['X_val']
+        X_test = splits['X_test']
+        y_train = splits['y_train']
+        y_val = splits['y_val']
+        y_test = splits['y_test']
+
+        categorical_information = loader.categorical_information
+        assert categorical_information is not None
+        categorical_feature_indices = loader.categorical_information['categorical_columns']
+
+        # Default value if early stopping is not activated
+        best_iteration = None
+
+        params = {
+            'iterations': config['iterations'],
+            'learning_rate': config['learning_rate'],
+            'eval_metric': metrics.BalancedAccuracy(),
+            'random_strength': config['random_strength'],
+            'one_hot_max_size': config['one_hot_max_size'],
+            'random_seed': self.seed,
+            'l2_leaf_reg': config['l2_leaf_reg'],
+            'bagging_temperature': config['bagging_temperature'],
+            'leaf_estimation_iterations': config['leaf_estimation_iterations'],
+        }
+
+        model = CatBoostClassifier(
+            **params,
+        )
+
+        model.fit(
+            X_train,
+            y_train,
+            cat_features=categorical_feature_indices,
+            eval_set=(X_val, y_val),
+            plot=False,
+        )
+
+        model.save_model(
+            os.path.join(
+            self.output_directory,
+            'catboost_hpo_model.dump',
+            )
+        )
+
+        y_train_preds = model.predict(X_train)
+        y_val_preds = model.predict(X_val)
+        y_test_preds = model.predict(X_test)
+
+        train_performance = balanced_accuracy_score(y_train, y_train_preds)
+        val_performance = balanced_accuracy_score(y_val, y_val_preds)
+        test_performance = balanced_accuracy_score(y_test, y_test_preds)
+
+        if val_performance is None or val_performance is np.inf:
+            val_error_rate = 1
+        else:
+            val_error_rate = 1 - val_performance
+
+        res = {
+            'train_accuracy': float(train_performance),
+            'val_accuracy': float(val_performance),
+            'test_accuracy': float(test_performance),
+            'best_round': best_iteration,
+        }
+
+        return ({
+            'loss': float(val_error_rate),  # this is the a mandatory field to run hyperband
+            'info': res  # can be used for any user-defined information - also mandatory
+        })
+
+    def refit(self, config: dict) -> Dict:
+        """Runs refit on the best configuration.
+
+        The function refits on the best configuration. It then
+        proceeds to train and test gbdt, this time combining
+        the train and validation set together for training. Probably,
+        in the future, a budget should be added too as an argument to
+        the parameter.
+
+        Parameters:
+        -----------
+            config: dict
+                dictionary containing the sampled configurations by the optimizer
+        Returns:
+        --------
+            res: dict
+                Dictionary with the train and test accuracy.
+        """
+        # Always activate imputation for CatBoost.
+        loader = Loader(
+            task_id=self.task_id,
+            val_fraction=0,
+            seed=self.seed,
+            apply_one_hot_encoding=False,
+            apply_imputation=True,
+        )
+
+        splits = loader.get_splits()
+        X_train = splits['X_train']
+        X_test = splits['X_test']
+        y_train = splits['y_train']
+        y_test = splits['y_test']
+
+        categorical_information = loader.categorical_information
+        assert categorical_information is not None
+        categorical_feature_indices = loader.categorical_information['categorical_columns']
+
+        params = {
+            'iterations': config['iterations'],
+            'learning_rate': config['learning_rate'],
+            'eval_metric': metrics.BalancedAccuracy(),
+            'random_strength': config['random_strength'],
+            'one_hot_max_size': config['one_hot_max_size'],
+            'random_seed': self.seed,
+            'l2_leaf_reg': config['l2_leaf_reg'],
+            'bagging_temperature': config['bagging_temperature'],
+            'leaf_estimation_iterations': config['leaf_estimation_iterations'],
+        }
+
+        model = CatBoostClassifier(
+            **params,
+        )
+
+        model.fit(
+            X_train,
+            y_train,
+            cat_features=categorical_feature_indices,
+            plot=False,
+        )
+
+        model.save_model(
+            os.path.join(
+                self.output_directory,
+                'catboost_refit_model.dump',
+            )
+        )
+
+        y_train_preds = model.predict(X_train)
+        y_test_preds = model.predict(X_test)
+
+        train_performance = balanced_accuracy_score(y_train, y_train_preds)
+        test_performance = balanced_accuracy_score(y_test, y_test_preds)
+
+        if test_performance is None or test_performance is np.inf:
+            test_performance = 0
+
+        res = {
+            'train_accuracy': float(train_performance),
+            'test_accuracy': float(test_performance),
+        }
+
+        return res
+
+    @staticmethod
+    def get_default_configspace(
+        seed: int = 11,
+    ) -> cs.ConfigurationSpace:
+        """Get the hyperparameter search space.
+
+        The function provides the configuration space that is
+        used to generate the algorithm specific hyperparameter
+        search space.
+
+        Parameters:
+        -----------
+        seed: int
+            The seed used to build the configuration space.
+        Returns:
+        --------
+        config_space: cs.ConfigurationSpace
+            Configuration space for CatBoost.
+        """
+        config_space = cs.ConfigurationSpace(seed=seed)
+
+        config_space.add_hyperparameter(
+            cs.UniformIntegerHyperparameter(
+                'iterations',
+                lower=1,
+                upper=1000,
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformFloatHyperparameter(
+                'learning_rate',
+                lower=1e-7,
+                upper=1,
+                log=True,
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformIntegerHyperparameter(
+                'random_strength',
+                lower=1,
+                upper=20,
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformIntegerHyperparameter(
+                'one_hot_max_size',
+                lower=0,
+                upper=25,
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformFloatHyperparameter(
+                'l2_leaf_reg',
+                lower=1,
+                upper=10,
+                log=True,
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformFloatHyperparameter(
+                'bagging_temperature',
+                lower=0,
+                upper=1,
+            )
+        )
+        config_space.add_hyperparameter(
+            cs.UniformIntegerHyperparameter(
+                'leaf_estimation_iterations',
+                lower=1,
+                upper=10,
+            )
+        )
+
+        return config_space
+
+    @staticmethod
+    def get_parameters(
+            seed: int = 11,
+            task_id: int = 233088,
+            output_directory: str = 'path_to_output',
+    ) -> Dict[str, Union[int, str]]:
+        """Get the parameters of the method.
+
+        Get a dictionary based on the arguments given to the
+        function, which will be used to as the initial configuration
+        for the algorithm.
+
+        Parameters:
+        -----------
+        seed: int
+            The seed that will be used for the model.
+        task_id: int
+            The id of the task that will be used for the experiment.
+        output_directory: str
+            THe path where the output results will be stored.
+
+        Returns:
+        --------
+        param: dict
+            A dictionary that will be used as a configuration for the
+            algorithm.
+        """
+        param = {
+            'task_id': task_id,
+            'seed': seed,
+            'output_directory': output_directory
         }
 
         return param

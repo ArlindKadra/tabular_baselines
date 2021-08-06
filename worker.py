@@ -1061,7 +1061,6 @@ class CatBoostWorker(Worker):
         params = {
             'iterations': config['iterations'],
             'learning_rate': config['learning_rate'],
-            'eval_metric': metrics.BalancedAccuracy(),
             'random_strength': config['random_strength'],
             'one_hot_max_size': config['one_hot_max_size'],
             'random_seed': self.seed,
@@ -1154,7 +1153,6 @@ class CatBoostWorker(Worker):
         params = {
             'iterations': config['iterations'],
             'learning_rate': config['learning_rate'],
-            'eval_metric': metrics.BalancedAccuracy(),
             'random_strength': config['random_strength'],
             'one_hot_max_size': config['one_hot_max_size'],
             'random_seed': self.seed,
@@ -1275,6 +1273,7 @@ class CatBoostWorker(Worker):
     @staticmethod
     def get_parameters(
             seed: int = 11,
+            nr_classes: int = 2,
             task_id: int = 233088,
             output_directory: str = 'path_to_output',
     ) -> Dict[str, Union[int, str]]:
@@ -1288,6 +1287,9 @@ class CatBoostWorker(Worker):
         -----------
         seed: int
             The seed that will be used for the model.
+        nr_classes: int
+            The number of classes in the dataset, which in turn
+            will be used to determine the loss.
         task_id: int
             The id of the task that will be used for the experiment.
         output_directory: str
@@ -1304,5 +1306,20 @@ class CatBoostWorker(Worker):
             'seed': seed,
             'output_directory': output_directory
         }
+
+        if nr_classes != 2:
+            param.update(
+                {
+                    'loss_function': 'MultiClass',
+                    'eval_metric': metrics.Accuracy(),
+                }
+            )
+        else:
+            param.update(
+                {
+                    'loss_function': 'Logloss',
+                    'eval_metric': metrics.BalancedAccuracy(),
+                }
+            )
 
         return param

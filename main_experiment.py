@@ -141,6 +141,7 @@ elif args.model =='xgboost':
 else:
     param = model_worker.get_parameters(
         task_id=task_id,
+        nr_classes=nr_classes,
         seed=args.seed,
         output_directory=run_directory,
     )

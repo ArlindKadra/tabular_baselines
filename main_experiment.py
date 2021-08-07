@@ -137,6 +137,7 @@ elif args.model =='xgboost':
         nr_classes=nr_classes,
         seed=args.seed,
         nr_threads=args.nr_threads,
+        output_directory=run_directory,
     )
 else:
     param = model_worker.get_parameters(
@@ -193,8 +194,18 @@ optimizer_choices = {
 
 optimizer = optimizer_choices[args.optimizer]
 
+# for the moment only available to XGBoost
+if args.model == 'xgboost':
+    config_space = model_worker.get_default_configspace(
+        seed=args.seed,
+        early_stopping=True,
+        conditional_imputation=False,
+    )
+else:
+    config_space = model_worker.get_default_configspace(seed=args.seed)
+
 bohb = optimizer(
-    configspace=model_worker.get_default_configspace(seed=args.seed),
+    configspace=config_space,
     run_id=args.run_id,
     host=host,
     nameserver=ns_host,

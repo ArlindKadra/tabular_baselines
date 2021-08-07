@@ -61,11 +61,9 @@ class XGBoostWorker(Worker):
         self.param = deepcopy(param)
         self.task_id = self.param['task_id']
         self.output_directory = self.param['output_directory']
-        self.early_stopping = self.param['early_stopping']
 
         del self.param['task_id']
         del self.param['output_directory']
-        del self.param['early_stopping']
 
         if self.param['objective'] == 'binary:logistic':
             self.threshold_predictions = True
@@ -502,7 +500,6 @@ class XGBoostWorker(Worker):
         nr_threads: int = 1,
         task_id: int = 233088,
         output_directory: str = 'path_to_output',
-        early_stopping: bool = False,
     ) -> Dict[str, Union[int, str]]:
         """Get the parameters of the method.
 
@@ -525,10 +522,6 @@ class XGBoostWorker(Worker):
         output_directory: str
             The path to the output directory where the results and
             model can be stored.
-        early_stopping: bool
-            Flag whether to activate early stopping. If not activated
-            the number of rounds will be a hyperparameter, if activated
-            it will be at an upper bound of 4000.
 
         Returns:
         --------
@@ -542,7 +535,6 @@ class XGBoostWorker(Worker):
             'nthread': nr_threads,
             'task_id': task_id,
             'output_directory': output_directory,
-            'early_stopping': early_stopping,
         }
 
         if nr_classes != 2:

@@ -46,6 +46,7 @@ def balanced_error(
         predt = predt.astype(int)
     else:
         predt = np.argmax(predt, axis=1)
+
     y_train = dtrain.get_label()
     accuracy_score = balanced_accuracy_score(y_train, predt)
 
@@ -59,7 +60,12 @@ class XGBoostWorker(Worker):
         super().__init__(*args, **kwargs)
         self.param = deepcopy(param)
         self.task_id = self.param['task_id']
+        self.output_directory = self.param['output_directory']
+        self.early_stopping = self.param['early_stopping']
+
         del self.param['task_id']
+        del self.param['output_directory']
+        del self.param['early_stopping']
 
         if self.param['objective'] == 'binary:logistic':
             self.threshold_predictions = True
@@ -92,31 +98,32 @@ class XGBoostWorker(Worker):
         if 'num_round' in xgboost_config:
             num_rounds = xgboost_config['num_round']
             del xgboost_config['num_round']
+            early_stopping_iterations = None
         else:
             num_rounds = 4000
+            early_stopping_iterations = \
+                xgboost_config['early_stopping_rounds']
+            del xgboost_config['early_stopping_rounds']
+
+        if 'use_imputation' in xgboost_config:
+            apply_imputation = xgboost_config['use_imputation']
+            del xgboost_config['use_imputation']
+        else:
+            # if no conditional imputation, always use it
+            apply_imputation = True
 
         if xgboost_config['use_ohe'] == 'True':
             use_ohe = True
         else:
             use_ohe = False
 
-        if xgboost_config['use_imputation'] == 'True':
-            use_imputation = True
-        else:
-            use_imputation = False
-
-        early_stopping_iterations = \
-            xgboost_config['early_stopping_rounds']
-
         del xgboost_config['use_ohe']
-        del xgboost_config['use_imputation']
-        del xgboost_config['early_stopping_rounds']
 
         loader = Loader(
             task_id=self.task_id,
             seed=xgboost_config['seed'],
             apply_one_hot_encoding=use_ohe,
-            apply_imputation=use_imputation,
+            apply_imputation=apply_imputation,
         )
         splits = loader.get_splits()
 
@@ -144,32 +151,38 @@ class XGBoostWorker(Worker):
             early_stopping_rounds=early_stopping_iterations,
         )
 
+        gb_model.save_model(
+            os.path.join(
+                self.output_directory,
+                'xgboost_model_dump.json',
+            )
+        )
+
         # TODO Do something with eval_results in the future
         # print(eval_results)
 
         # Default value if early stopping is not activated
         best_iteration = None
 
+        n_tree_limit = None
         # early stopping activated and triggered
         if hasattr(gb_model, 'best_score'):
-            y_train_preds = gb_model.predict(
-                d_train,
-                ntree_limit=gb_model.best_ntree_limit,
-            )
-            y_val_preds = gb_model.predict(
-                d_val,
-                ntree_limit=gb_model.best_ntree_limit,
-            )
-            y_test_preds = gb_model.predict(
-                d_test,
-                ntree_limit=gb_model.best_ntree_limit,
-            )
-            print(f'Best iteration for xgboost: {gb_model.best_iteration}')
+            n_tree_limit = gb_model.best_ntree_limit
             best_iteration = gb_model.best_iteration
-        else:
-            y_train_preds = gb_model.predict(d_train)
-            y_val_preds = gb_model.predict(d_val)
-            y_test_preds = gb_model.predict(d_test)
+            print(f'Best iteration for xgboost: {best_iteration}')
+
+        y_train_preds = gb_model.predict(
+            d_train,
+            ntree_limit=n_tree_limit,
+        )
+        y_val_preds = gb_model.predict(
+            d_val,
+            ntree_limit=n_tree_limit,
+        )
+        y_test_preds = gb_model.predict(
+            d_test,
+            ntree_limit=n_tree_limit,
+        )
 
         if self.threshold_predictions:
             y_train_preds = np.array(y_train_preds)
@@ -225,6 +238,7 @@ class XGBoostWorker(Worker):
         """
         xgboost_config = deepcopy(self.param)
         xgboost_config.update(config)
+
         if 'num_round' in xgboost_config:
             num_rounds = xgboost_config['num_round']
             del xgboost_config['num_round']
@@ -236,20 +250,21 @@ class XGBoostWorker(Worker):
         else:
             use_ohe = False
 
-        if xgboost_config['use_imputation'] == 'True':
-            use_imputation = True
-        else:
-            use_imputation = False
-
         del xgboost_config['use_ohe']
-        del xgboost_config['use_imputation']
+
+        if 'use_imputation' in xgboost_config:
+            apply_imputation = xgboost_config['use_imputation']
+            del xgboost_config['use_imputation']
+        else:
+            # if no conditional imputation, always use it
+            apply_imputation = True
 
         loader = Loader(
             task_id=self.task_id,
             val_fraction=0,
             seed=xgboost_config['seed'],
             apply_one_hot_encoding=use_ohe,
-            apply_imputation=use_imputation,
+            apply_imputation=apply_imputation,
         )
         splits = loader.get_splits()
 
@@ -271,8 +286,16 @@ class XGBoostWorker(Worker):
             evals_result=eval_results,
         )
 
+        gb_model.save_model(
+            os.path.join(
+                self.output_directory,
+                'xgboost_refit_model_dump.json',
+            )
+        )
+
         # TODO do something with eval_results
         # print(eval_results)
+
         # make prediction
         y_train_preds = gb_model.predict(d_train)
         y_test_preds = gb_model.predict(d_test)
@@ -301,7 +324,9 @@ class XGBoostWorker(Worker):
 
     @staticmethod
     def get_default_configspace(
-            seed: int = 11,
+        seed: int = 11,
+        early_stopping: bool = False,
+        conditional_imputation: bool = False,
     ) -> cs.ConfigurationSpace:
         """Get the hyperparameter search space.
 
@@ -346,15 +371,9 @@ class XGBoostWorker(Worker):
                 log=True,
             )
         )
-        """At the moment, 4000 and with early stopping
-        config_space.add_hyperparameter(
-            cs.UniformIntegerHyperparameter(
-                'num_round',
-                lower=1,
-                upper=1000,
-            )
-        )
-        """
+
+        # not added directly because condition
+        # has to be applied.
         booster = cs.CategoricalHyperparameter(
             'booster',
             choices=['gbtree', 'dart'],
@@ -364,8 +383,8 @@ class XGBoostWorker(Worker):
         )
         rate_drop = cs.UniformFloatHyperparameter(
             'rate_drop',
-            1e-10,
-            1-(1e-10),
+            lower=1e-10,
+            upper=1-(1e-10),
             default_value=0.5,
         )
         config_space.add_hyperparameter(
@@ -435,19 +454,36 @@ class XGBoostWorker(Worker):
                 choices=['True', 'False'],
             )
         )
-        config_space.add_hyperparameter(
-            cs.CategoricalHyperparameter(
-                'use_imputation',
-                choices=['True', 'False'],
+
+        if conditional_imputation:
+            config_space.add_hyperparameter(
+                cs.CategoricalHyperparameter(
+                    'use_imputation',
+                    choices=['True', 'False'],
+                )
             )
-        )
-        config_space.add_hyperparameter(
-            cs.UniformIntegerHyperparameter(
-                'early_stopping_rounds',
-                lower=1,
-                upper=20,
+
+        # if early stopping is activated, add the
+        # number of stopping rounds as a hyperparameter.
+        # Number of rounds is fixed at 4000.
+        if early_stopping:
+            config_space.add_hyperparameter(
+                cs.UniformIntegerHyperparameter(
+                    'early_stopping_rounds',
+                    lower=1,
+                    upper=20,
+                )
             )
-        )
+        else:
+            # no early stopping activated, number of rounds
+            # is a hyperparameter.
+            config_space.add_hyperparameter(
+                cs.UniformIntegerHyperparameter(
+                    'num_round',
+                    lower=1,
+                    upper=1000,
+                )
+            )
 
         config_space.add_condition(
             cs.EqualsCondition(
@@ -461,10 +497,12 @@ class XGBoostWorker(Worker):
 
     @staticmethod
     def get_parameters(
-            nr_classes: int,
-            seed: int = 11,
-            nr_threads: int = 1,
-            task_id: int = 233088,
+        nr_classes: int,
+        seed: int = 11,
+        nr_threads: int = 1,
+        task_id: int = 233088,
+        output_directory: str = 'path_to_output',
+        early_stopping: bool = False,
     ) -> Dict[str, Union[int, str]]:
         """Get the parameters of the method.
 
@@ -484,6 +522,13 @@ class XGBoostWorker(Worker):
             the model.
         task_id: int
             The id of the task that is used for the experiment.
+        output_directory: str
+            The path to the output directory where the results and
+            model can be stored.
+        early_stopping: bool
+            Flag whether to activate early stopping. If not activated
+            the number of rounds will be a hyperparameter, if activated
+            it will be at an upper bound of 4000.
 
         Returns:
         --------
@@ -496,7 +541,10 @@ class XGBoostWorker(Worker):
             'seed': seed,
             'nthread': nr_threads,
             'task_id': task_id,
+            'output_directory': output_directory,
+            'early_stopping': early_stopping,
         }
+
         if nr_classes != 2:
             param.update(
                 {
@@ -518,10 +566,10 @@ class XGBoostWorker(Worker):
 class TabNetWorker(Worker):
 
     def __init__(
-            self,
-            *args,
-            param: dict,
-            **kwargs,
+        self,
+        *args,
+        param: dict,
+        **kwargs,
     ):
 
         super().__init__(*args, **kwargs)
@@ -774,7 +822,7 @@ class TabNetWorker(Worker):
 
     @staticmethod
     def get_default_configspace(
-            seed: int = 11,
+        seed: int = 11,
     ) -> cs.ConfigurationSpace:
         """Get the hyperparameter search space.
 
@@ -961,8 +1009,8 @@ class TabNetWorker(Worker):
 
     @staticmethod
     def get_parameters(
-            seed: int = 11,
-            task_id: int = 233088,
+        seed: int = 11,
+        task_id: int = 233088,
     ) -> Dict[str, Union[int, str]]:
         """Get the parameters of the method.
 
@@ -1304,7 +1352,7 @@ class CatBoostWorker(Worker):
         param = {
             'task_id': task_id,
             'seed': seed,
-            'output_directory': output_directory
+            'output_directory': output_directory,
         }
 
         if nr_classes != 2:

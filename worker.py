@@ -149,13 +149,6 @@ class XGBoostWorker(Worker):
             early_stopping_rounds=early_stopping_iterations,
         )
 
-        gb_model.save_model(
-            os.path.join(
-                self.output_directory,
-                'xgboost_model_dump.json',
-            )
-        )
-
         # TODO Do something with eval_results in the future
         # print(eval_results)
 
@@ -1119,13 +1112,6 @@ class CatBoostWorker(Worker):
             cat_features=categorical_feature_indices,
             eval_set=(X_val, y_val),
             plot=False,
-        )
-
-        model.save_model(
-            os.path.join(
-            self.output_directory,
-            'catboost_hpo_model.dump',
-            )
         )
 
         y_train_preds = model.predict(X_train)

@@ -8,9 +8,12 @@ import openml
 import pandas as pd
 import scipy
 from scipy.stats import wilcoxon, rankdata
+from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
+
 
 
 """
@@ -59,38 +62,82 @@ def get_dataset_split(
         for the different sets.
     """
     X, y, categorical_indicator, _ = dataset.get_data(
-        dataset_format='array',
+        dataset_format='dataframe',
         target=dataset.default_target_attribute,
     )
 
     label_encoder = LabelEncoder()
-
     empty_features = []
-    # detect features that are null
-    for feature_index in range(0, X.shape[1]):
-        nan_mask = np.isnan(X[:, feature_index])
-        nan_verdict = np.all(nan_mask)
-        if nan_verdict:
-            empty_features.append(feature_index)
-    # remove feature indicators from categorical indicator
-    # that are null.
-    for feature_index in sorted(empty_features, reverse=True):
-        del categorical_indicator[feature_index]
 
+    # remove nan features from the dataframe
+    nan_columns = X.isna().all()
+    for col_index, col_status in enumerate(nan_columns):
+        if col_status:
+            empty_features.append(col_index)
+    # if there are null categorical columns, remove them
+    # from the categorical column indicator.
+    if len(empty_features) > 0:
+        for feature_index in sorted(empty_features, reverse=True):
+            del categorical_indicator[feature_index]
+
+    column_names = list(X.columns)
     # delete empty feature columns.
     # Normally this would be done by the simple imputer, but
     # since now it is conditional, we do it ourselves.
-    X = np.delete(X, empty_features, 1)
+    empty_feature_names = [column_names[feat_index] for feat_index in empty_features]
+    if any(nan_columns):
+        X.drop(labels=empty_feature_names, axis='columns', inplace=True)
 
-    # Impute missing feature values
+    column_names = list(X.columns)
+    numerical_columns = []
+    categorical_columns = []
+
+    index = 0
+    categorical_col_indices = []
+    for cat_column_indicator, column_name in zip(categorical_indicator, column_names):
+        if cat_column_indicator:
+            categorical_columns.append(column_name)
+            categorical_col_indices.append(index)
+        else:
+            numerical_columns.append(column_name)
+        index += 1
+
+    """# Impute missing feature values
     if apply_imputation:
         X = impute_missing_data(X)
+    """
+    transformers = []
+
+    if len(numerical_columns) > 0:
+        numeric_transformer = Pipeline(
+            steps=[
+                ('num_imputer', SimpleImputer(strategy='constant')),
+                ('scaler', StandardScaler())
+            ]
+        )
+        transformers.append(('num', numeric_transformer, numerical_columns))
+
+    if len(categorical_columns) > 0:
+        steps=[
+                ('cat_imputer', SimpleImputer(strategy='constant')),
+        ]
+        if apply_one_hot_encoding:
+            steps.append(('cat_encoding', OneHotEncoder(handle_unknown='ignore')))
+        else:
+            pass
+            # steps.append(('cat_encoding', LabelEncoder()))
+        categorical_transformer = Pipeline(
+            steps=steps,
+        )
+        transformers.append(('cat', categorical_transformer, categorical_columns))
+
+    preprocessor = ColumnTransformer(
+        transformers=transformers,
+    )
 
     # label encode the targets
     y = label_encoder.fit_transform(y)
 
-    # check if the data matrix is sparse
-    is_sparse = scipy.sparse.issparse(X)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -100,40 +147,16 @@ def get_dataset_split(
         stratify=y,
     )
 
-    # standardize data
-    X_train, X_test = standardize_data(
-        X_train,
-        X_test,
-        is_sparse,
-    )
-
-    categorical_columns = []
     categorical_dimensions = []
     if model == 'tabnet':
-        for index, categorical_column in enumerate(categorical_indicator):
-            if categorical_column:
-                column_unique_values = len(set(X[:, index]))
-                column_max_index = int(max(X[:, index]))
-                # categorical columns with only one unique value
-                # do not need an embedding.
-                if column_unique_values == 1:
-                    continue
-                categorical_columns.append(index)
-                categorical_dimensions.append(column_max_index + 1)
+        for cat_column in categorical_columns:
+            column_unique_values = X[cat_column].nunique()
+            # categorical columns with only one unique value
+            # do not need an embedding.
+            if column_unique_values == 1:
+                continue
 
-    # one hot encode the data
-    if apply_one_hot_encoding:
-        X_train, X_test = ohe_the_data(
-            X_train,
-            X_test,
-        )
-
-    dataset_splits = {
-        'X_train': X_train,
-        'X_test': X_test,
-        'y_train': y_train,
-        'y_test': y_test,
-    }
+            categorical_dimensions.append(column_unique_values)
 
     if val_fraction != 0:
         new_val_fraction = val_fraction / (1 - test_fraction)
@@ -144,14 +167,38 @@ def get_dataset_split(
             random_state=seed,
             stratify=y_train,
         )
-        dataset_splits['X_train'] = X_train
+
+    preprocessor.fit(X_train, y_train)
+
+    X_train = preprocessor.transform(X_train)
+    X_test = preprocessor.transform(X_test)
+
+    dataset_splits = {
+        'X_train': X_train,
+        'X_test': X_test,
+        'y_train': y_train,
+        'y_test': y_test,
+    }
+
+    if val_fraction != 0:
+        X_val = preprocessor.transform(X_val)
         dataset_splits['X_val'] = X_val
-        dataset_splits['y_train'] = y_train
         dataset_splits['y_val'] = y_val
 
+    new_categorical_indicator = []
+    new_categorical_indices = []
+
+    for i in range(len(column_names)):
+        if i < len(numerical_columns):
+            categorical_status = False
+        else:
+            categorical_status = True
+            new_categorical_indices.append(i)
+        new_categorical_indicator.append(categorical_status)
+
     categorical_information = {
-        'categorical_ind': categorical_indicator,
-        'categorical_columns': categorical_columns,
+        'categorical_ind': new_categorical_indicator,
+        'categorical_columns': new_categorical_indices,
         'categorical_dimensions': categorical_dimensions,
     }
 
@@ -159,9 +206,9 @@ def get_dataset_split(
 
 
 def standardize_data(
-        X_train: np.ndarray,
-        X_test: np.ndarray,
-        is_sparse: bool
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+    is_sparse: bool
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Standardize the data.
 
@@ -190,12 +237,12 @@ def standardize_data(
 
 
 def impute_missing_data(
-        X: np.ndarray,
+    X: np.ndarray,
 ) -> np.ndarray:
     """Impute missing data from the given dataset.
 
     Impute missing data from the given dataset by using
-    the most frequent values.
+    constant values.
 
     Parameters:
     -----------
@@ -207,8 +254,7 @@ def impute_missing_data(
     _: np.ndarray
         Data after imputation.
     """
-    # Most frequent strategy for imputation, since
-    # there also categorical features in most datasets.
+    # Constant strategy for imputation.
     imputer = SimpleImputer(strategy='constant')
 
     return imputer.fit_transform(X)

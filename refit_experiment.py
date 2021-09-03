@@ -10,7 +10,7 @@ import numpy as np
 import openml
 
 from data.loader import Loader
-from worker import XGBoostWorker, TabNetWorker
+from worker import CatBoostWorker, XGBoostWorker, TabNetWorker
 
 
 parser = argparse.ArgumentParser(
@@ -61,9 +61,17 @@ task_id = args.task_id
 task = openml.tasks.get_task(task_id, download_data=False)
 nr_classes = int(openml.datasets.get_dataset(task.dataset_id, download_data=False).qualities['NumberOfClasses'])
 
+run_directory = os.path.join(
+    args.working_directory,
+    f'{args.task_id}',
+    f'{args.seed}',
+)
+os.makedirs(run_directory, exist_ok=True)
+
 worker_choices = {
     'tabnet': TabNetWorker,
     'xgboost': XGBoostWorker,
+    'catboost': CatBoostWorker,
 }
 
 model_worker = worker_choices[args.model]
@@ -73,21 +81,23 @@ if args.model == 'tabnet':
         task_id=args.task_id,
         seed=args.seed,
     )
-else:
+elif args.model =='xgboost':
     param = model_worker.get_parameters(
         task_id=args.task_id,
         nr_classes=nr_classes,
         seed=args.seed,
         nr_threads=args.nr_threads,
+        output_directory=run_directory,
+    )
+else:
+    param = model_worker.get_parameters(
+        task_id=args.task_id,
+        nr_classes=nr_classes,
+        seed=args.seed,
+        output_directory=run_directory,
     )
 
 print(f'Refit experiment started with task id: {args.task_id}')
-run_directory = os.path.join(
-    args.working_directory,
-    f'{args.task_id}',
-    f'{args.seed}',
-)
-os.makedirs(run_directory, exist_ok=True)
 
 worker = model_worker(
     args.run_id,
